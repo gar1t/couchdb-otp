@@ -1,0 +1,4 @@
+*.beam
+priv/*.config
+*.couch
+*.dump

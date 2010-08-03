@@ -1,0 +1,28 @@
+=======
+ Notes
+=======
+
+- Brazely using 'couchdb' as the application name and module prefix. This might
+  be off-putting. CouchDB uses 'couch' and we may cause confusion. The
+  thinking, however, is that Erlang developers (the community that would likely
+  care about namespace issues, aside from the CouchDB dev team) won't care
+  about close collisions as they'll use the `couchdb` interface.
+
+- couch_app starts a bunch of apps. This is generally handled elsewhere --
+  commonly when starting an Erlang release (dependecies are automatically
+  started using dependencies in .app file).
+
+- We want to keep the dependencies to a mininum, so not requiring oauth, ssl,
+  ibrowse, and mochiweb (maybe others).
+
+- Want to push "ini files" logic into a stand alone server that uses config to
+  located the applicable files.
+
+- Not possible to start couch_server with no config -- breaks in init/1 looking
+  for "max_db_open" (no default vals). We'll cover for this using a hack in
+  couchdb_sup. The general idea is that we should work with sensible defaults
+  without any external config.
+
+- couch_uuids:new/0 looks crufty - it's a gen_server call and not used. The
+  server is never started by couch, so I'm guessing couch_uuids:random/0 is the
+  correct function (but there are calls to new/0, possibly also not used).

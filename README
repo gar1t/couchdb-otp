@@ -1,0 +1,63 @@
+=============
+ CouchDB OTP
+=============
+
+CouchDB OTP is a project for exploring ways to OTPify CouchDB, making it easier
+to use as an embeddable database in Erlang applications.
+
+References:
+
+ | http://github.com/apache/couchdb
+ | http://github.com/jchris/hovercraft
+
+Goals
+=====
+
+- Use CouchDB as a typical OTP application
+- Bypass unneeded components such as HTTP/JSON support
+- Use unmodified CouchDB source if possible
+- Provide a documented module that exposes CouchDB's public API (`couchdb`)
+- Make it easy for developers to obtain and install whatever code they need
+
+Sample usage::
+
+ Eshell V5.7.5  (abort with ^G)
+ 1> application:start(couchdb).
+ 2> {ok, Db} = couchdb:create_db("test").
+ 3> {ok, _} = couchdb:create_doc(Db, [{"name", "Damien"}]).
+ 4> q().
+
+.. note::
+
+   This project appears almost identical to Hovercraft. However, it goes a bit
+   deeper with an attempt to expose CouchDB as a compliant OTP application.
+
+Why
+===
+
+CouchDB already supports Erlang applications through various HTTP interface
+drivers. What's the point of embedded CouchDB as an Erlang OTP application?
+
+- Simplify the use of CouchDB in Erlang
+- Avoid unneeded overhead of HTTP/JSON
+- Position Erlang to build distributed database "front ends" using CouchDB as
+  the physical data store and replication engine
+
+Approach
+========
+
+- Start with a skeletal OTP application
+- Use Hovercraft as a reference
+- Use helper or wrapper modules to map core CouchDB services into an
+  application lifecycle
+- Provide for standard application configuration (i.e. use of config files and
+  `erl` command line options)
+- Provide an API module to simplify use of CouchDB services
+- Add other "features" needed to realize the project goals
+- Somehow package the module for simlple usage with CouchDB
+
+In theory this should be very doable as CouchDB already uses a number of OTP
+conventions. The exercise is therefore more one of packaging and documentation
+-- at least in theory.
+
+
