@@ -12,14 +12,11 @@
          get_attr/2,
          get_attr/3]).
 
-new() ->
-    #doc{id=couch_uuids:random()}.
+new() -> #doc{id=couch_uuids:random()}.
 
-new(Attrs) ->
-    #doc{id=couch_uuids:random(), body={Attrs}}.
+new(Attrs) -> #doc{id=couch_uuids:random(), body={Attrs}}.
 
-new(Id, Body) ->
-    #doc{id=Id, body=Body}.
+new(Id, Body) -> #doc{id=Id, body=Body}.
 
 get_id(#doc{id=Id}) -> Id.
 

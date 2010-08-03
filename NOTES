@@ -2,21 +2,20 @@
  Notes
 =======
 
-- Brazely using 'couchdb' as the application name and module prefix. This might
-  be off-putting. CouchDB uses 'couch' and we may cause confusion. The
+- Brazenly using 'couchdb' as the application name and module prefix. This
+  might be off-putting. CouchDB uses 'couch' and we may cause confusion. The
   thinking, however, is that Erlang developers (the community that would likely
   care about namespace issues, aside from the CouchDB dev team) won't care
   about close collisions as they'll use the `couchdb` interface.
 
-- couch_app starts a bunch of apps. This is generally handled elsewhere --
-  commonly when starting an Erlang release (dependecies are automatically
+- couch_app starts a bunch of apps. This is typically handled elsewhere --
+  usually when starting an Erlang release (dependecies are automatically
   started using dependencies in .app file).
 
 - We want to keep the dependencies to a mininum, so not requiring oauth, ssl,
   ibrowse, and mochiweb (maybe others).
 
-- Want to push "ini files" logic into a stand alone server that uses config to
-  located the applicable files.
+- Using application config to locate ini files.
 
 - Not possible to start couch_server with no config -- breaks in init/1 looking
   for "max_db_open" (no default vals). We'll cover for this using a hack in
@@ -26,3 +25,10 @@
 - couch_uuids:new/0 looks crufty - it's a gen_server call and not used. The
   server is never started by couch, so I'm guessing couch_uuids:random/0 is the
   correct function (but there are calls to new/0, possibly also not used).
+
+- This has nothing to do with the project, but it's surprising that the content
+  type for a json response over http is text/plain and not application/json.
+
+- delayed_commit is really a big deal - no lie. Docs/sec around 20 with it off,
+  up to 280 with it on. Bulk writes bumped up to over 2000. These are all
+  consistent with http://books.couchdb.org/relax/reference/high-performance.

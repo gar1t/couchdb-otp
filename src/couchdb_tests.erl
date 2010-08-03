@@ -7,8 +7,9 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [%fun basic_db_test/0,
-             fun basic_doc_test/0],
+    Tests = [fun basic_db_test/0,
+             fun basic_doc_test/0,
+             fun batch_insert_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -34,11 +35,10 @@ basic_db_test() ->
     ?assertEqual(ok, couchdb:close(Db)),
 
     % Delete using the db name.
-    ?assertEqual(ok, couchdb:delete(Name)).
+    couchdb:delete(Name).
 
 basic_doc_test() ->
     
-    % We'll create a new database for our doc tests.
     DbName = random_dbname(),
     {ok, Db} = couchdb:new(DbName),
 
@@ -68,8 +68,22 @@ basic_doc_test() ->
 
     % TODO: finish basic doc ops.
     
-    % Delete the db.
-    ok = couchdb:delete(DbName).
+    couchdb:delete(DbName).
+
+batch_insert_test() ->
+    
+    DbName = random_dbname(),
+    {ok, Db} = couchdb:new(DbName),
+
+    % Use put_many to insert a batch of documents. This can have a 10x increase
+    % in throughput at the expense of durability.
+
+    Docs = [couchdoc:new() || _ <- lists:seq(1, 10)],
+    DocsR = couchdb:put_many(Db, Docs),
+    ?assertEqual(10, length(DocsR)),
+    ?assertMatch([{ok, _}|_], DocsR),
+
+    couchdb:delete(DbName).
 
 random_dbname() ->
     random:seed(erlang:now()),

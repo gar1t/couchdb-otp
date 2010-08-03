@@ -1,6 +1,9 @@
 # Set to top level dir of CouchDB source package
 COUCHDB_DIR := ../../couchdb
+
+# Libraries we depend on, defaults based on CouchDB source package
 COUCHDB_EBIN := $(COUCHDB_DIR)/src/couchdb
+MOCHIWEB_EBIN := $(COUCHDB_DIR)/src/mochiweb
 
 # When using shell target, specify CONFIG file name in ../priv dir
 CONFIG := empty
@@ -33,6 +36,8 @@ endif
 ERL_SOURCES := $(wildcard *.erl)
 ERL_OBJECTS := $(ERL_SOURCES:%.erl=$(EBIN_DIR)/%.beam)
 
+PA_OPTS := -pa $(EBIN_DIR) -pa $(COUCHDB_EBIN) -pa $(MOCHIWEB_EBIN)
+
 $(EBIN_DIR)/%.beam: %.erl
 	$(ERLC) -I $(INCLUDE_DIR) $(ERLC_FLAGS) -o $(EBIN_DIR) $<
 
@@ -41,10 +46,10 @@ app:  $(ERL_OBJECTS)
 release: app
 
 test: $(ERL_OBJECTS)
-	$(ERL) $(ERL_OPTS) -pa $(EBIN_DIR)  -pa $(COUCHDB_EBIN) -noshell -s $(TESTS) test -s init stop
+	$(ERL) $(ERL_OPTS) $(PA_OPTS) -noshell -s $(TESTS) test -s init stop
 
 shell: $(ERL_OBJECTS)
-	$(ERL) $(ERL_OPTS) -pa $(EBIN_DIR) -pa $(COUCHDB_EBIN) $(SHELL_OPTS) -s reloader -s couchdb
+	$(ERL) $(ERL_OPTS) $(PA_OPTS) $(SHELL_OPTS) -s reloader -s couchdb
 
 clean:
 	rm -rf $(EBIN_DIR)/*.beam

@@ -2,10 +2,12 @@
 
 -behaviour(supervisor).
 
--export([start_link/0]).
+-export([start_link/0,
+         start_httpd/0,
+         stop_httpd/0]).
 
 % Non-standard start functions.
--export([start_config/1]).
+-export([start_config_wrapper/1]).
 
 -export([init/1]).
 
@@ -17,7 +19,8 @@ start_link() ->
 %%---------------------------------------------------------------------------
 %% @doc Standard supervisor init/1.
 %%
-%% Any non-standard init is moved into module start_xxx methods (see below).
+%% Any non-standard init is moved into module start_xxx_wrapper methods (see
+%% below).
 %%
 %% The restart and shutdown specs are taken from CouchDB.
 %%
@@ -26,7 +29,7 @@ start_link() ->
 init([]) ->
     Ini = couch_ini(),
     {ok, {{one_for_all, 10, 3600},
-          [{couch_config, {?MODULE, start_config, [Ini]},
+          [{couch_config, {?MODULE, start_config_wrapper, [Ini]},
             permanent, brutal_kill, worker, [couch_config]},
            {couch_db_update_event, {gen_event, start_link,
                                     [{local, couch_db_update}]},
@@ -44,14 +47,44 @@ couch_ini() ->
     end.
 
 %%---------------------------------------------------------------------------
+%% @doc Starts the httpd service.
+%%
+%% This is exernalized to make httpd optional at runtime.
+%%
+%% TODO - this should be optionally confiugrable to auto-start with the
+%% other supervised processes
+%% --------------------------------------------------------------------------
+start_httpd() ->
+    case supervisor:start_child(couchdb_sup, httpd_spec()) of
+        {ok, Pid} ->
+            set_missing_config("httpd", "authentication_handlers",
+                               "{couch_httpd_auth, "
+                               "default_authentication_handler}"),
+            {ok, Pid};
+        {error, already_present} ->
+            supervisor:restart_child(couchdb_sup, couch_httpd);
+        Other -> Other
+    end.
+
+httpd_spec() ->
+    {couch_httpd, {couch_httpd, start_link, []},
+     permanent, 1000, worker, [couch_httpd]}.
+
+%%---------------------------------------------------------------------------
+%% @doc Stops the httpd service.
+%% --------------------------------------------------------------------------
+stop_httpd() ->
+    supervisor:terminate_child(couchdb_sup, couch_httpd).
+
+%%---------------------------------------------------------------------------
 %% @doc Sets any missing config values to sensible defaults.
 %%
 %% This is a work around for any values that CouchDB assumes to be in config.
 %% --------------------------------------------------------------------------
-start_config(Ini) ->
-    {ok, Sup} = couch_config:start_link(Ini),
+start_config_wrapper(Ini) ->
+    {ok, Pid} = couch_config:start_link(Ini),
     set_missing_config("couchdb", "max_dbs_open", "100"),
-    {ok, Sup}.
+    {ok, Pid}.
 
 set_missing_config(S, K, Val) ->
     case couch_config:get(S, K) of

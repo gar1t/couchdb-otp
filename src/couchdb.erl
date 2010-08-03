@@ -14,6 +14,7 @@
          db_info/1,
          put/2,
          put/3,
+         put_many/2,
          get/2,
          get/3]).
 
@@ -113,6 +114,18 @@ put(Db, Doc, Options) ->
             {ok, Doc#doc{revs={Start, [RevId]}}};
         Err -> Err
     end.
+
+%%---------------------------------------------------------------------------
+%% @doc Stores documents in bulk.
+%%---------------------------------------------------------------------------
+
+put_many(Db, Docs) ->
+    {ok, Result} = couch_db:update_docs(Db, Docs),
+    lists:zipwith(fun({ok, {Start, RevId}}, Doc) -> 
+                          {ok, Doc#doc{revs={Start, [RevId]}}};
+                     (Err, Doc) ->
+                          {Err, Doc}
+                  end, Result, Docs).
 
 %%---------------------------------------------------------------------------
 %% @doc Retrieves a document.
