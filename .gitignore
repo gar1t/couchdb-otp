@@ -1,4 +1,6 @@
 *.beam
-priv/*.config
 *.couch
 *.dump
+*.log
+priv/*.config
+priv/*.ini
