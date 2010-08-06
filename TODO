@@ -12,7 +12,4 @@ In no particular order (brain dump):
 - Attachments
 - Map/reduce (views?)
 - Indexes
-
-More specific issues:
-
-- There's breakage in the http interface - e.g. visit "/".
+- Tasks (e.g. /_active_tasks needs a proc, probably an optional service)

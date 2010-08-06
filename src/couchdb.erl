@@ -12,11 +12,13 @@
          delete/1,
          delete/2,
          db_info/1,
+         all_dbs/0,
          put/2,
          put/3,
          put_many/2,
          get/2,
-         get/3]).
+         get/3,
+         remove/2]).
 
 %%---------------------------------------------------------------------------
 %% @doc Convenience function to start couchdb app and dependent applications.
@@ -70,7 +72,11 @@ close(Db) ->
 %% Returns ok if deleted successfully otherwise returns an applicable error.
 %%
 %% TODO: document options
-%%---------------------------------------------------------------------------
+%%
+%% TODO: This collides a bit with 'remove' and should probably be 'delete_db'
+%% or something more obvious (esp given its severity), though _db breaks
+%% symmetry with the rest of the API :(
+%% ---------------------------------------------------------------------------
 
 delete(Name) ->
     delete(Name, []).
@@ -93,6 +99,14 @@ db_info_item({db_name, B}) ->
 db_info_item({instance_start_time, B}) -> 
     {instance_start_time, list_to_integer(binary_to_list(B))};
 db_info_item({_, _}=I) -> I.
+
+%%---------------------------------------------------------------------------
+%% @doc Returns a list of all db names.
+%%---------------------------------------------------------------------------
+
+all_dbs() ->
+    {ok, Dbs} = couch_server:all_databases(),
+    lists:map(fun binary_to_list/1, Dbs).
 
 %%---------------------------------------------------------------------------
 %% @doc Stores a document in a db.
@@ -145,9 +159,23 @@ get(Db, Id) ->
 
 get(#db{name=DbName}, Id, Options) ->
     {ok, Db} = couch_db:open(DbName, []),
-    case couch_db:open_doc(Db, Id, Options) of
+    case couch_db:open_doc(Db, to_bin(Id), Options) of
         {ok, Doc} -> {ok, Doc};
         Err -> Err
+    end.
+
+%%---------------------------------------------------------------------------
+%% @doc Removes Doc from Db.
+%%---------------------------------------------------------------------------
+
+remove(Db, #doc{}=Doc) ->
+    % NOTE: Not using couch_db:delete_doc/3 - bug as of r980985.
+    {ok, [Result]} = couch_db:update_docs(Db, [Doc#doc{deleted=true}], []),
+    Result;
+remove(Db, Id) ->
+    case get(Db, Id) of
+        {ok, Doc} -> remove(Db, Doc);
+        Other -> Other
     end.
 
 %%---------------------------------------------------------------------------

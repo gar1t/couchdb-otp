@@ -32,3 +32,28 @@
 - delayed_commit is really a big deal - no lie. Docs/sec around 20 with it off,
   up to 280 with it on. Bulk writes bumped up to over 2000. These are all
   consistent with http://books.couchdb.org/relax/reference/high-performance.
+
+- couch_db:delete_doc/3 doesn't work, probably not used anywhere.
+
+HTTP Views
+==========
+
+Working:
+
+ | /
+ | _all_dbs
+ | _config
+ | _session
+ | _utils
+
+Not working:
+
+ | /_active_tasks (needs couch_task_status proc - TODO)
+ | _log
+ | _status
+ | _uuids (needs couch_uuids proc - TODO)
+
+Not tested:
+
+ | _replicate (almost certainly doesn't work)
+ | _oauth (surely not working)

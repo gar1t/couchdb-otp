@@ -6,7 +6,11 @@
          start_httpd/0,
          stop_httpd/0,
          start_log/0,
-         stop_log/0]).
+         stop_log/0,
+         start_uuids/0,
+         stop_uuids/0,
+         start_all_optional/0,
+         stop_all_optional/0]).
 
 % Non-standard start functions.
 -export([start_config_wrapper/1]).
@@ -65,6 +69,8 @@ start_httpd() ->
     set_missing_config("httpd_global_handlers", "/",
                        "{couch_httpd_misc_handlers, handle_welcome_req, "
                        "<<\"Welcome\">>}"),
+    % Futon requires an auth db value, though it can be blank.
+    set_missing_config("couch_httpd_auth", "authentication_db", ""),
     start_optional_service(httpd_spec()).
 
 httpd_spec() ->
@@ -76,6 +82,23 @@ httpd_spec() ->
 %% --------------------------------------------------------------------------
 stop_httpd() ->
     stop_optional_service(httpd_spec()).
+
+%%---------------------------------------------------------------------------
+%% @doc Starts the uuids service (needed by futon).
+%% --------------------------------------------------------------------------
+start_uuids() ->
+    start_optional_service(uuids_spec()).
+
+uuids_spec() ->
+    % NOTE: couch_uuids:start/0 is actually a start_link.
+    {couch_uuids, {couch_uuids, start, []},
+     permanent, brutal_kill, worker, [couch_uuids]}.
+
+%%---------------------------------------------------------------------------
+%% @doc Stops the uuids service.
+%% --------------------------------------------------------------------------
+stop_uuids() ->
+    stop_optional_service(uuids_spec()).
 
 %%---------------------------------------------------------------------------
 %% @doc Starts the couch log service.
@@ -104,6 +127,22 @@ start_config_wrapper(Ini) ->
     {ok, Pid} = couch_config:start_link(Ini),
     set_missing_config("couchdb", "max_dbs_open", "100"),
     {ok, Pid}.
+
+%%---------------------------------------------------------------------------
+%% @doc Starts all optional services (httpd, uuids, log).
+%%---------------------------------------------------------------------------
+start_all_optional() ->
+    start_httpd(),
+    start_uuids(),
+    start_log().
+
+%%---------------------------------------------------------------------------
+%% @doc Stops all optional services (httpd, uuids, log).
+%%---------------------------------------------------------------------------
+stop_all_optional() ->
+    stop_log(),
+    stop_uuids(),
+    stop_httpd().
 
 %%---------------------------------------------------------------------------
 %% Private functions

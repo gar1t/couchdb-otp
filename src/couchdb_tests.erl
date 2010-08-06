@@ -7,9 +7,10 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [fun basic_db_test/0,
-             fun basic_doc_test/0,
-             fun batch_insert_test/0],
+    Tests = [%fun basic_db_test/0,
+             %fun basic_doc_test/0,
+             %fun batch_insert_test/0,
+             fun basic_view_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -66,7 +67,7 @@ basic_doc_test() ->
     ?assertEqual([tags], couchdoc:get_attr_names(Doc2R)),
     ?assertEqual([red, green, blue], couchdoc:get_attr(tags, Doc2R)),
 
-    % TODO: finish basic doc ops.
+    % TODO: finish basic doc ops: get_attrs, del_attr, couchdb:remove.
     
     couchdb:delete(DbName).
 
@@ -84,6 +85,15 @@ batch_insert_test() ->
     ?assertMatch([{ok, _}|_], DocsR),
 
     couchdb:delete(DbName).
+
+basic_view_test() ->
+
+    DbName = random_dbname(),
+    {ok, Db} = couchdb:new(DbName),
+
+    Map = "function(doc) { emit(doc._id, 1) }",
+    DDoc = couchdoc:new("_design/test", [{views, [{basic, [{map, Map}]}]}]),
+    couchdb:put(Db, DDoc).
 
 random_dbname() ->
     random:seed(erlang:now()),
