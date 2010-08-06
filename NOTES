@@ -35,6 +35,45 @@
 
 - couch_db:delete_doc/3 doesn't work, probably not used anywhere.
 
+- couch_icu_driver comes up when couch_util:collate/3 is called (e.g. new keys
+  are added to a btree index).
+
+Services
+--------
+
+The "core" services we have are as small as possible to enable basic embedded
+functions: db ops, doc ops, view queries. Everything else is moved into
+"optional" services. This is currently completely trial and error.
+
+We don't get *anywhere* without config and server. The db_update_event
+service is needed for various operations and is non-optional.
+
+Logging so far looks optional -- all of the events go into the ether if it's
+not started.
+
+httpd is needed as soon as you want to access CouchDB over REST calls or use
+Futon. This *really* requires a correctly setup `ini` file -- nothing really
+works without the right setup. (TODO: provide a minimal `ini.in` for using
+Futon.)
+
+uuids is used by Futon to generate IDs for new documents. We use the non proc
+calls.
+
+I'm not sure how far we can get without view or task_status. task_status is
+started as a core service by CouchDB itself, though we've gotten this far
+without it.
+
+query_servers is used to manage support for map/reduce and is needed for views.
+
+Services not addressed yet:
+
+- couch_replication_server
+- couch_external_manager
+- couch_db_update_notifier_sup
+- couch_stats_aggregator
+- couch_stats_collector
+- couch_auth_cache
+
 HTTP Views
 ==========
 

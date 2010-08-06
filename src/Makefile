@@ -36,7 +36,7 @@ endif
 ERL_SOURCES := $(wildcard *.erl)
 ERL_OBJECTS := $(ERL_SOURCES:%.erl=$(EBIN_DIR)/%.beam)
 
-PA_OPTS := -pa $(EBIN_DIR) -pa $(COUCHDB_EBIN) -pa $(MOCHIWEB_EBIN)
+PA_OPTS := -pa $(MOCHIWEB_EBIN) -pa $(COUCHDB_EBIN) -pa $(EBIN_DIR) 
 
 $(EBIN_DIR)/%.beam: %.erl
 	$(ERLC) -I $(INCLUDE_DIR) $(ERLC_FLAGS) -o $(EBIN_DIR) $<

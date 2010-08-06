@@ -3,21 +3,26 @@
 -behaviour(supervisor).
 
 -export([start_link/0,
-         start_httpd/0,
-         stop_httpd/0,
-         start_log/0,
-         stop_log/0,
-         start_uuids/0,
-         stop_uuids/0,
-         start_all_optional/0,
-         stop_all_optional/0]).
+         start_optional/0,
+         start_optional/1,
+         stop_optional/0,
+         stop_optional/1]).
 
 % Non-standard start functions.
 -export([start_config_wrapper/1]).
+-export([start_httpd_wrapper/0]).
 
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
+
+% TODO: some of these may actually be required - move to init as needed
+-define(ALL_OPTIONAL, [couch_httpd,
+                       couch_uuids,
+                       couch_log,
+                       couch_view,
+                       couch_task_status,
+                       couch_query_servers]).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
@@ -53,14 +58,68 @@ couch_ini() ->
     end.
 
 %%---------------------------------------------------------------------------
-%% @doc Starts the httpd service.
+%% @doc Starts all of the optional CouchDB services. To start a specific list
+%% of services, use start_optional/1.
+%% ---------------------------------------------------------------------------
+
+start_optional() ->
+    start_optional(?ALL_OPTIONAL).
+
+%%---------------------------------------------------------------------------
+%% @doc Starts a specific list of optional CouchDB services.
+%% ---------------------------------------------------------------------------
+
+start_optional([]) -> ok;
+start_optional([couch_httpd|T]) -> 
+    start_optional_service({couch_httpd, {?MODULE, start_httpd_wrapper, []},
+                            permanent, 1000, worker, [couch_httpd]}),
+    start_optional(T);
+start_optional([couch_uuids|T]) -> 
+    % couch_uuids:start/0 is a link.
+    start_optional_service({couch_uuids, {couch_uuids, start, []},
+                            permanent, brutal_kill, worker, [couch_uuids]}),
+    start_optional(T);
+start_optional([Module|T]) ->
+    start_optional_service({Module, {Module, start_link, []},
+                            permanent, brutal_kill, worker, [Module]}),
+    start_optional(T).
+
+
+%% ---------------------------------------------------------------------------
+%% @doc Stops the optional CouchDB services.
+%% ---------------------------------------------------------------------------
+
+stop_optional() ->
+    stop_optional(lists:reverse(?ALL_OPTIONAL)).
+
+%% ---------------------------------------------------------------------------
+%% @doc Stops a specific list of optional CouchDB services.
+%% ---------------------------------------------------------------------------
+
+stop_optional([]) -> ok;
+stop_optional([Module|T]) ->
+    stop_optional_service(Module),
+    stop_optional(T).
+ 
+%%---------------------------------------------------------------------------
+%% @doc Sets any missing config values to sensible defaults.
 %%
-%% This is exernalized to make httpd optional at runtime.
-%%
-%% TODO - this should be optionally confiugrable to auto-start with the
-%% other supervised processes
+%% This is a work around for any values that CouchDB assumes to be in config.
 %% --------------------------------------------------------------------------
-start_httpd() ->
+start_config_wrapper(Ini) ->
+    {ok, Pid} = couch_config:start_link(Ini),
+    % No default value for max_dbs_open - use value from default.ini.
+    set_missing_config("couchdb", "max_dbs_open", "100"),
+    % No default value for view_index_dir, use same val as database_dir.
+    set_missing_config("couchdb", "view_index_dir",
+                       couch_config:get("couchdb", "database_dir", ".")),
+    {ok, Pid}.
+
+%%---------------------------------------------------------------------------
+%% @doc Sets missing required httpd config values.
+%% --------------------------------------------------------------------------
+start_httpd_wrapper() ->
+
     % Default auth handler is required to run anything over http.
     set_missing_config("httpd", "authentication_handlers",
                        "{couch_httpd_auth, "
@@ -71,78 +130,7 @@ start_httpd() ->
                        "<<\"Welcome\">>}"),
     % Futon requires an auth db value, though it can be blank.
     set_missing_config("couch_httpd_auth", "authentication_db", ""),
-    start_optional_service(httpd_spec()).
-
-httpd_spec() ->
-    {couch_httpd, {couch_httpd, start_link, []},
-     permanent, 1000, worker, [couch_httpd]}.
-
-%%---------------------------------------------------------------------------
-%% @doc Stops the httpd service.
-%% --------------------------------------------------------------------------
-stop_httpd() ->
-    stop_optional_service(httpd_spec()).
-
-%%---------------------------------------------------------------------------
-%% @doc Starts the uuids service (needed by futon).
-%% --------------------------------------------------------------------------
-start_uuids() ->
-    start_optional_service(uuids_spec()).
-
-uuids_spec() ->
-    % NOTE: couch_uuids:start/0 is actually a start_link.
-    {couch_uuids, {couch_uuids, start, []},
-     permanent, brutal_kill, worker, [couch_uuids]}.
-
-%%---------------------------------------------------------------------------
-%% @doc Stops the uuids service.
-%% --------------------------------------------------------------------------
-stop_uuids() ->
-    stop_optional_service(uuids_spec()).
-
-%%---------------------------------------------------------------------------
-%% @doc Starts the couch log service.
-%%
-%% TODO - support auto-start
-%% --------------------------------------------------------------------------
-start_log() ->
-    start_optional_service(log_spec()).
-
-log_spec() ->
-    {couch_log, {couch_log, start_link, []},
-     permanent, brutal_kill, worker, [couch_log]}.
-
-%%---------------------------------------------------------------------------
-%% @doc Stops the log service.
-%% --------------------------------------------------------------------------
-stop_log() ->
-    stop_optional_service(log_spec()).
-
-%%---------------------------------------------------------------------------
-%% @doc Sets any missing config values to sensible defaults.
-%%
-%% This is a work around for any values that CouchDB assumes to be in config.
-%% --------------------------------------------------------------------------
-start_config_wrapper(Ini) ->
-    {ok, Pid} = couch_config:start_link(Ini),
-    set_missing_config("couchdb", "max_dbs_open", "100"),
-    {ok, Pid}.
-
-%%---------------------------------------------------------------------------
-%% @doc Starts all optional services (httpd, uuids, log).
-%%---------------------------------------------------------------------------
-start_all_optional() ->
-    start_httpd(),
-    start_uuids(),
-    start_log().
-
-%%---------------------------------------------------------------------------
-%% @doc Stops all optional services (httpd, uuids, log).
-%%---------------------------------------------------------------------------
-stop_all_optional() ->
-    stop_log(),
-    stop_uuids(),
-    stop_httpd().
+    couch_httpd:start_link().
 
 %%---------------------------------------------------------------------------
 %% Private functions
@@ -161,8 +149,11 @@ start_optional_service(Spec) ->
             {ok, Pid};
         {error, already_present} ->
             supervisor:restart_child(?SERVER, Id);
-        Other -> Other
+        {error, {already_started, Pid}} ->
+            {error, {already_started, Pid}};
+        Err -> 
+            exit(Err)
     end.
 
-stop_optional_service({Id, _,_,_,_,_}) ->
+stop_optional_service(Id) ->
     supervisor:terminate_child(?SERVER, Id).

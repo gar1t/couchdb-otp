@@ -17,6 +17,8 @@
 
 %%---------------------------------------------------------------------------
 %% @doc Creates a new empty document. Uses a random UUID for the ID.
+%%
+%% TODO: could use utc_random as well, make configurable (app cfg)
 %%---------------------------------------------------------------------------
 
 new() -> #doc{id=couch_uuids:random()}.
