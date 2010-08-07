@@ -7,10 +7,10 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [fun basic_db_test/0,
-             fun basic_doc_test/0,
-             fun batch_insert_test/0],
-             %fun basic_view_test/0],
+    Tests = [%fun basic_db_test/0,
+             %fun basic_doc_test/0,
+             %fun batch_insert_test/0],
+             fun select_all_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -80,14 +80,113 @@ batch_insert_test() ->
 
     couchdb:delete_db(DbName).
 
-basic_view_test() ->
+select_all_test() ->
 
     DbName = random_dbname(),
     {ok, Db} = couchdb:open(DbName),
 
-    Map = "function(doc) { emit(doc._id, 1) }",
-    DDoc = couchdoc:new("_design/test", [{views, [{basic, [{map, Map}]}]}]),
-    couchdb:put(Db, DDoc).
+    % To select from all docs using ID ranges, use couchdb:select/4. Let's add
+    % some docs to select.
+
+    D1 = couchdoc:new("1", [{name, "doc-1"}]),
+    D2 = couchdoc:new("2", [{name, "doc-2"}]),
+    D3 = couchdoc:new("3", [{name, "doc-3"}]),
+    D4 = couchdoc:new("4", [{name, "doc-4"}]),
+    couchdb:put_many(Db, [D1, D2, D3, D4]),
+
+    % We can select every doc in the database ordered by ID as follows:
+
+    {TotalRowCount, Offset, Rows1} = couchdb:select(Db, []),
+    ?assertEqual(TotalRowCount, 4),
+    ?assertEqual(0, Offset),
+
+    % Rows is a proplist containing id, key, value and optionally doc
+    % properties. Let's view the ordered ids for the result.
+
+    ?assertEqual([<<"1">>, <<"2">>, <<"3">>, <<"4">>], 
+                 [get_value(id, Row) || Row <- Rows1]),
+
+    % Note that the IDs, which were specified as strings, are now
+    % binaries. CouchDB stores keys strictly as binaries - the string IDs were
+    % implicitly converted when the documents were added.
+
+    % In the case when we haven't specified a view (i.e. we're selecting
+    % documents from the database directly), the keys are the document ids.
+
+    ?assertEqual([<<"1">>, <<"2">>, <<"3">>, <<"4">>], 
+                 [get_value(key, Row) || Row <- Rows1]),
+
+    % Result values are the document's revisions.
+    
+    ?assertMatch([[{rev, _}], [{rev, _}], [{rev, _}], [{rev, _}]],
+                 [get_value(value, Row) || Row <- Rows1]),
+
+    % By default, the documents themselves aren't retured in the results.
+
+    ?assertEqual([undefined, undefined, undefined, undefined],
+                 [get_value(doc, Row) || Row <- Rows1]),
+
+    % We can include the documents by specifying the include_docs property.
+
+    {4, 0, Rows2} = couchdb:select(Db, [include_docs]),
+    ?assertEqual(["doc-1", "doc-2", "doc-3", "doc-4"],
+                 [get_value(name, get_value(doc, Row)) || Row <- Rows2]),
+
+    % To reverse the result (i.e. sort by ID descending), use the reverse
+    % property.
+
+    {4, 0, Rows3} = couchdb:select(Db, [reverse]),
+    ?assertEqual([<<"4">>, <<"3">>, <<"2">>, <<"1">>],
+                 [get_value(id, Row) || Row <- Rows3]),
+
+    % The result can be limited using limit.
+
+    {4, 0, Rows4} = couchdb:select(Db, [{limit, 2}]),
+    ?assertEqual([<<"1">>, <<"2">>], [get_value(id, Row) || Row <- Rows4]),
+
+    % Docs can be skipped from the start of the match using skip. The offset in
+    % the document list will reflect the skipped docs.
+
+    {4, 2, Rows5} = couchdb:select(Db, [{skip, 2}]),
+    ?assertEqual([<<"3">>, <<"4">>], [get_value(id, Row) || Row <- Rows5]),
+
+    % Document can be selected by range using a start and end ID. Either value
+    % may be undefined, indicating that the range is unbounded for that
+    % side. Let's first find documents that include "2" and "3".
+
+    {4, 1, Rows6} = couchdb:select(Db, "2", "3", []),
+    ?assertEqual([<<"2">>, <<"3">>], [get_value(id, Row) || Row <- Rows6]),
+
+    % Note again that strings are implicitly converted to binaries. We could
+    % have used binaries as the start and end IDs as well.
+
+    {4, 1, Rows6} = couchdb:select(Db, <<"2">>, <<"3">>, []),
+    ?assertEqual([<<"2">>, <<"3">>], [get_value(id, Row) || Row <- Rows6]),
+
+    % By default, ID selection is inclusive of the end ID. We can exlucde the
+    % end using exclude_end.
+
+    {4, 1, Rows7} = couchdb:select(Db, "2", "3", [exclude_end]),
+    ?assertEqual([<<"2">>], [get_value(id, Row) || Row <- Rows7]),
+
+    % Here are some unbounded selects.
+
+    {4, 2, Rows8} = couchdb:select(Db, "3", undefined, []),
+    ?assertEqual([<<"3">>, <<"4">>], [get_value(id, Row) || Row <- Rows8]),
+
+    {4, 0, Rows9} = couchdb:select(Db, undefined, "2", []),
+    ?assertEqual([<<"1">>, <<"2">>], [get_value(id, Row) || Row <- Rows9]),
+
+    % Take care when specifying reverse - the start and end IDs must be
+    % reversed as well.
+
+    {4, 2, Rows10} = couchdb:select(Db, "2", "1", [reverse]),
+    ?assertEqual([<<"2">>, <<"1">>], [get_value(id, Row) || Row <- Rows10]),
+
+    {4, 2, Rows11} = couchdb:select(Db, "2", undefined, [reverse]),
+    ?assertEqual([<<"2">>, <<"1">>], [get_value(id, Row) || Row <- Rows11]),
+
+    couchdb:delete_db(DbName).
 
 random_dbname() ->
     random:seed(erlang:now()),

@@ -16,7 +16,9 @@
          put_many/2,
          get/2,
          get/3,
-         delete/2]).
+         delete/2,
+         select/2,
+         select/4]).
 
 %%---------------------------------------------------------------------------
 %% @doc Convenience function to start couchdb app and dependent applications.
@@ -163,6 +165,110 @@ delete(Db, Id) ->
         {ok, Doc} -> delete(Db, Doc);
         Other -> Other
     end.
+
+%%---------------------------------------------------------------------------
+%% @doc Selects from all documents.
+%%
+%%  Options    = options()
+%%  options()  = [option()]
+%%  option()   = {limit, int()}
+%%             | {skip, int()}
+%%             | reverse
+%%             | include_docs
+%%---------------------------------------------------------------------------
+
+select(Db, Options) ->
+    select(Db, undefined, undefined, Options).
+
+%%---------------------------------------------------------------------------
+%% @doc Selects a range of documents using start and end keys.
+%%
+%%  StartId    = binary() | string() | undefined
+%%  EndId      = binary() | string() | undefined
+%%  Options    = options()
+%%  options()  = [option()]
+%%  option()   = {limit, int()}
+%%             | {skip, int()}
+%%             | reverse
+%%             | exclude_end
+%%             | include_docs
+%%
+%% TODO: stale not supported (easy to add) - what else can we pass in?
+%%---------------------------------------------------------------------------
+
+select(#db{name=DbName}, StartId0, EndId0, Options) ->
+    {ok, Db} = couch_db:open(DbName, []),
+    Dir = case proplists:get_bool(reverse, Options) of
+              true -> rev;
+              false -> fwd
+          end,
+    StartId = select_start_id(StartId0, Dir),
+    EndId = select_end_id(EndId0, Dir),
+    Limit = proplists:get_value(limit, Options, 10000000000),
+    Skip = proplists:get_value(skip, Options, 0),
+    InclEnd = not proplists:get_bool(exclude_end, Options),
+    InclDocs = proplists:get_bool(include_docs, Options),
+    Args = #view_query_args{start_docid=StartId,
+                            end_docid=EndId,
+                            limit=Limit,
+                            skip=Skip,
+                            direction=Dir,
+                            inclusive_end=InclEnd,
+                            include_docs=InclDocs},
+    {ok, Info} = couch_db:get_db_info(Db),
+    DocCount = couch_util:get_value(doc_count, Info),
+    FoldFun = view_fold_fun(Db, Args, couch_db:get_update_seq(Db), DocCount),
+    InAcc = {Limit, Skip, undefined, []},
+    EnumOptions = [{start_key, StartId},
+                   {dir, Dir}, 
+                   {case InclEnd of 
+                        true -> end_key; 
+                        false -> end_key_gt
+                    end, EndId}],
+    {ok, _, {_, _, _, Result}} = 
+        couch_btree:fold(Db#db.fulldocinfo_by_id_btree,
+                         enum_db_acc_fun(FoldFun), InAcc, EnumOptions),
+    case Result of
+        {Offset, Rows} -> {DocCount, Offset, lists:reverse(Rows)};
+        [] -> {DocCount, DocCount, []}
+    end.
+
+select_start_id(undefined, fwd) -> <<"">>;
+select_start_id(undefined, rev) -> <<255>>;
+select_start_id(Id, _) -> to_bin(Id).
+
+select_end_id(undefined, fwd) -> <<255>>;
+select_end_id(undefined, rev) -> <<"">>;
+select_end_id(Id, _) -> to_bin(Id).    
+
+view_fold_fun(Db, QueryArgs, UpdateSeq, DocCount) ->
+    Helpers = #view_fold_helper_funs{
+      reduce_count=fun couch_db:enum_docs_reduce_to_count/1,
+      start_response=fun view_fold_start_response/6,
+      send_row=fun view_fold_send_row/5},
+    couch_httpd_view:make_view_fold_fun(
+      nil, QueryArgs, <<"">>, Db, UpdateSeq, DocCount, Helpers).
+
+enum_db_acc_fun(Fold) ->
+    fun(#full_doc_info{id=Id}=FDI, Offset, Acc) ->
+            case couch_doc:to_doc_info(FDI) of
+                #doc_info{revs=[#rev_info{deleted=false, rev=Rev}|_]} ->
+                    Fold({{Id, Id}, {[{rev, couch_doc:rev_to_str(Rev)}]}},
+                         Offset, Acc);
+                #doc_info{revs=[#rev_info{deleted=true}|_]} ->
+                    {ok, Acc}
+            end
+    end.
+
+view_fold_start_response(_Req, _Etag, _RowCount, Offset, _Acc, _UpdateSeq) ->
+    {ok, nil, {Offset, []}}.
+
+view_fold_send_row(_Resp, Db, Doc, IncludeDocs, {Offset, Acc}) ->
+    {Row} = couch_httpd_view:view_row_obj(Db, Doc, IncludeDocs),
+    {ok, {Offset, [lists:map(fun format_row_item/1, Row)|Acc]}}.
+
+format_row_item({Name, {Val}}) -> {Name, Val};
+format_row_item({Name, Val}) -> {Name, Val}. 
 
 %%---------------------------------------------------------------------------
 %% Private functions

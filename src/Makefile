@@ -12,7 +12,10 @@ CONFIG := empty
 # suffix)
 CONFIG_PATH := ../priv/$(CONFIG)
 
-# For shell target, use ERL_OPTS to override default options (see below)
+# For shell and test targets, PA_OPTS specifies all -pa options to erl
+PA_OPTS := -pa $(MOCHIWEB_EBIN) -pa $(COUCHDB_EBIN) -pa $(EBIN_DIR)
+
+# For shell and test targets, use ERL_OPTS to override default options
 ERL_OPTS := -config $(CONFIG_PATH)
 
 # Generally, the rest of these don't need to be overridden.
@@ -36,8 +39,6 @@ endif
 ERL_SOURCES := $(wildcard *.erl)
 ERL_OBJECTS := $(ERL_SOURCES:%.erl=$(EBIN_DIR)/%.beam)
 
-PA_OPTS := -pa $(MOCHIWEB_EBIN) -pa $(COUCHDB_EBIN) -pa $(EBIN_DIR) 
-
 $(EBIN_DIR)/%.beam: %.erl
 	$(ERLC) -I $(INCLUDE_DIR) $(ERLC_FLAGS) -o $(EBIN_DIR) $<
 
@@ -46,10 +47,10 @@ app:  $(ERL_OBJECTS)
 release: app
 
 test: $(ERL_OBJECTS)
-	$(ERL) $(ERL_OPTS) $(PA_OPTS) -noshell -s $(TESTS) test -s init stop
+	$(ERL) $(ERL_OPTS) -noshell -s $(TESTS) test -s init stop
 
 shell: $(ERL_OBJECTS)
-	$(ERL) $(ERL_OPTS) $(PA_OPTS) $(SHELL_OPTS) -s reloader -s couchdb
+	$(ERL) $(ERL_OPTS) $(SHELL_OPTS) -s reloader -s couchdb
 
 clean:
 	rm -rf $(EBIN_DIR)/*.beam
