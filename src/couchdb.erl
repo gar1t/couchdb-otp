@@ -4,14 +4,14 @@
 
 -export([start/0]).
 
--export([new/1,
-         new/2,
+-export([create/1,
+         create/2,
          open/1,
          open/2,
          close/1,
          delete/1,
          delete/2,
-         db_info/1,
+         info/1,
          all_dbs/0,
          put/2,
          put/3,
@@ -39,10 +39,10 @@ start() ->
 %% TODO: document options
 %%---------------------------------------------------------------------------
 
-new(Name) ->
-    new(Name, []).
+create(Name) ->
+    create(Name, []).
 
-new(Name, Options) ->
+create(Name, Options) ->
     couch_server:create(to_bin(Name), Options).
 
 %%---------------------------------------------------------------------------
@@ -90,15 +90,15 @@ delete(Name, Options) ->
 %% Error if Db is invalid.
 %%---------------------------------------------------------------------------
 
-db_info(Db) ->
+info(Db) ->
     {ok, Info} = couch_db:get_db_info(Db),
-    [db_info_item(I) || I <- Info].
+    [info_item(I) || I <- Info].
 
-db_info_item({db_name, B}) ->
+info_item({db_name, B}) ->
     {db_name, binary_to_list(B)};
-db_info_item({instance_start_time, B}) -> 
+info_item({instance_start_time, B}) -> 
     {instance_start_time, list_to_integer(binary_to_list(B))};
-db_info_item({_, _}=I) -> I.
+info_item({_, _}=I) -> I.
 
 %%---------------------------------------------------------------------------
 %% @doc Returns a list of all db names.

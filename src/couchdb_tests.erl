@@ -20,17 +20,17 @@ basic_db_test() ->
 
     % Create a new db with a unique name.
     Name = random_dbname(),
-    {ok, Db} = couchdb:new(Name),
+    {ok, Db} = couchdb:create(Name),
 
     % We can't open a db that doesn't already exist.
     ?assertEqual({not_found, no_db_file}, couchdb:open(random_dbname())),
 
-    % Use db_info/1 to get info about the db.
-    Info = couchdb:db_info(Db),
+    % Use info/1 to get info about the db.
+    Info = couchdb:info(Db),
     ?assertEqual(Name, get_value(db_name, Info)),
 
     % We can't create a db that exists.
-    ?assertEqual(file_exists, couchdb:new(Name)),
+    ?assertEqual(file_exists, couchdb:create(Name)),
 
     % We can close the db using close/1 (TODO - what does this do?).
     ?assertEqual(ok, couchdb:close(Db)),
@@ -41,7 +41,7 @@ basic_db_test() ->
 basic_doc_test() ->
     
     DbName = random_dbname(),
-    {ok, Db} = couchdb:new(DbName),
+    {ok, Db} = couchdb:create(DbName),
 
     % Docs are created using couchdoc:new.
     Doc = couchdoc:new(),
@@ -74,7 +74,7 @@ basic_doc_test() ->
 batch_insert_test() ->
     
     DbName = random_dbname(),
-    {ok, Db} = couchdb:new(DbName),
+    {ok, Db} = couchdb:create(DbName),
 
     % Use put_many to insert a batch of documents. This can have a 10x increase
     % in throughput at the expense of durability.
@@ -89,7 +89,7 @@ batch_insert_test() ->
 basic_view_test() ->
 
     DbName = random_dbname(),
-    {ok, Db} = couchdb:new(DbName),
+    {ok, Db} = couchdb:create(DbName),
 
     Map = "function(doc) { emit(doc._id, 1) }",
     DDoc = couchdoc:new("_design/test", [{views, [{basic, [{map, Map}]}]}]),
