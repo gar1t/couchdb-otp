@@ -4,13 +4,11 @@
 
 -export([start/0]).
 
--export([create/1,
-         create/2,
-         open/1,
+-export([open/1,
          open/2,
          close/1,
-         delete/1,
-         delete/2,
+         delete_db/1,
+         delete_db/2,
          info/1,
          all_dbs/0,
          put/2,
@@ -18,7 +16,7 @@
          put_many/2,
          get/2,
          get/3,
-         remove/2]).
+         delete/2]).
 
 %%---------------------------------------------------------------------------
 %% @doc Convenience function to start couchdb app and dependent applications.
@@ -32,32 +30,24 @@ start() ->
     application:start(couchdb).
 
 %%---------------------------------------------------------------------------
-%% @doc Creates a new database.
+%% @doc Open a database. If the database doesn't exist, it's created.
 %%
 %% On success, returns {ok, Db} otherwise returns an applicable error.
 %%
 %% TODO: document options
-%%---------------------------------------------------------------------------
-
-create(Name) ->
-    create(Name, []).
-
-create(Name, Options) ->
-    couch_server:create(to_bin(Name), Options).
-
-%%---------------------------------------------------------------------------
-%% @doc Open a database.
-%%
-%% On success, returns {ok, Db} otherwise returns an applicable error.
-%%
-%% TODO: document options
+%% TODO: confirm that options make sense for create as well as open, else
+%%       we need two functions
 %%---------------------------------------------------------------------------
 
 open(Name) ->
     open(Name, []).
 
 open(Name, Options) ->
-    couch_db:open(to_bin(Name), Options).
+    case couch_db:open(to_bin(Name), Options) of
+        {not_found,no_db_file} ->
+            couch_server:create(to_bin(Name), Options);
+        Other -> Other
+    end.
 
 %%---------------------------------------------------------------------------
 %% @doc Closes a database.
@@ -72,16 +62,12 @@ close(Db) ->
 %% Returns ok if deleted successfully otherwise returns an applicable error.
 %%
 %% TODO: document options
-%%
-%% TODO: This collides a bit with 'remove' and should probably be 'delete_db'
-%% or something more obvious (esp given its severity), though _db breaks
-%% symmetry with the rest of the API :(
 %% ---------------------------------------------------------------------------
 
-delete(Name) ->
-    delete(Name, []).
+delete_db(Name) ->
+    delete_db(Name, []).
 
-delete(Name, Options) ->
+delete_db(Name, Options) ->
     couch_server:delete(to_bin(Name), Options).
 
 %%---------------------------------------------------------------------------
@@ -168,13 +154,13 @@ get(#db{name=DbName}, Id, Options) ->
 %% @doc Removes Doc from Db.
 %%---------------------------------------------------------------------------
 
-remove(Db, #doc{}=Doc) ->
+delete(Db, #doc{}=Doc) ->
     % NOTE: Not using couch_db:delete_doc/3 - bug as of r980985.
     {ok, [Result]} = couch_db:update_docs(Db, [Doc#doc{deleted=true}], []),
     Result;
-remove(Db, Id) ->
+delete(Db, Id) ->
     case get(Db, Id) of
-        {ok, Doc} -> remove(Db, Doc);
+        {ok, Doc} -> delete(Db, Doc);
         Other -> Other
     end.
 

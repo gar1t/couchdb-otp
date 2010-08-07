@@ -7,10 +7,10 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [%fun basic_db_test/0,
-             %fun basic_doc_test/0,
-             %fun batch_insert_test/0,
-             fun basic_view_test/0],
+    Tests = [fun basic_db_test/0,
+             fun basic_doc_test/0,
+             fun batch_insert_test/0],
+             %fun basic_view_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -20,28 +20,22 @@ basic_db_test() ->
 
     % Create a new db with a unique name.
     Name = random_dbname(),
-    {ok, Db} = couchdb:create(Name),
-
-    % We can't open a db that doesn't already exist.
-    ?assertEqual({not_found, no_db_file}, couchdb:open(random_dbname())),
+    {ok, Db} = couchdb:open(Name),
 
     % Use info/1 to get info about the db.
     Info = couchdb:info(Db),
     ?assertEqual(Name, get_value(db_name, Info)),
 
-    % We can't create a db that exists.
-    ?assertEqual(file_exists, couchdb:create(Name)),
-
     % We can close the db using close/1 (TODO - what does this do?).
     ?assertEqual(ok, couchdb:close(Db)),
 
     % Delete using the db name.
-    couchdb:delete(Name).
+    couchdb:delete_db(Name).
 
 basic_doc_test() ->
     
     DbName = random_dbname(),
-    {ok, Db} = couchdb:create(DbName),
+    {ok, Db} = couchdb:open(DbName),
 
     % Docs are created using couchdoc:new.
     Doc = couchdoc:new(),
@@ -67,14 +61,14 @@ basic_doc_test() ->
     ?assertEqual([tags], couchdoc:get_attr_names(Doc2R)),
     ?assertEqual([red, green, blue], couchdoc:get_attr(tags, Doc2R)),
 
-    % TODO: finish basic doc ops: get_attrs, del_attr, couchdb:remove.
+    % TODO: finish basic doc ops: get_attrs, del_attr, delete.
     
-    couchdb:delete(DbName).
+    couchdb:delete_db(DbName).
 
 batch_insert_test() ->
     
     DbName = random_dbname(),
-    {ok, Db} = couchdb:create(DbName),
+    {ok, Db} = couchdb:open(DbName),
 
     % Use put_many to insert a batch of documents. This can have a 10x increase
     % in throughput at the expense of durability.
@@ -84,12 +78,12 @@ batch_insert_test() ->
     ?assertEqual(10, length(DocsR)),
     ?assertMatch([{ok, _}|_], DocsR),
 
-    couchdb:delete(DbName).
+    couchdb:delete_db(DbName).
 
 basic_view_test() ->
 
     DbName = random_dbname(),
-    {ok, Db} = couchdb:create(DbName),
+    {ok, Db} = couchdb:open(DbName),
 
     Map = "function(doc) { emit(doc._id, 1) }",
     DDoc = couchdoc:new("_design/test", [{views, [{basic, [{map, Map}]}]}]),
