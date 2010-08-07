@@ -16,13 +16,9 @@
 
 -define(SERVER, ?MODULE).
 
-% TODO: some of these may actually be required - move to init as needed
--define(ALL_OPTIONAL, [couch_httpd,
-                       couch_uuids,
-                       couch_log,
-                       couch_view,
-                       couch_task_status,
-                       couch_query_servers]).
+-define(VIEW_SUPPORT, [couch_view, couch_task_status, couch_query_servers]).
+-define(HTTPD_SUPPORT, [couch_httpd, couch_uuids|?VIEW_SUPPORT]).
+-define(ALL_OPTIONAL, [couch_log|?HTTPD_SUPPORT]).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
@@ -69,6 +65,10 @@ start_optional() ->
 %% @doc Starts a specific list of optional CouchDB services.
 %% ---------------------------------------------------------------------------
 
+start_optional(view_support) ->
+    start_optional(?VIEW_SUPPORT);
+start_optional(httpd_support) ->
+    start_optional(?HTTPD_SUPPORT);
 start_optional([]) -> ok;
 start_optional([couch_httpd|T]) -> 
     start_optional_service({couch_httpd, {?MODULE, start_httpd_wrapper, []},
@@ -96,6 +96,10 @@ stop_optional() ->
 %% @doc Stops a specific list of optional CouchDB services.
 %% ---------------------------------------------------------------------------
 
+stop_optional(view_support) ->
+    stop_optional(lists:reverse(?VIEW_SUPPORT));
+stop_optional(httpd_support) ->
+    stop_optional(lists:reverse(?HTTPD_SUPPORT));
 stop_optional([]) -> ok;
 stop_optional([Module|T]) ->
     stop_optional_service(Module),
@@ -113,6 +117,11 @@ start_config_wrapper(Ini) ->
     % No default value for view_index_dir, use same val as database_dir.
     set_missing_config("couchdb", "view_index_dir",
                        couch_config:get("couchdb", "database_dir", ".")),
+    % We need to start the ICU driver somewhere and this is the soonest
+    % possible point - right after the config proc is started. This would
+    % typically be loaded by the supervised process that used it, but couch
+    % loads it outside a supervisor tree.
+    couchdb_util:start_icu_driver(),
     {ok, Pid}.
 
 %%---------------------------------------------------------------------------

@@ -17,7 +17,7 @@
 
 - Using application config to locate ini files.
 
-- Not possible to start couch_server with no config -- breaks in init/1 looking
+- Not possible to start couch_server without config -- breaks in init/1 looking
   for "max_db_open" (no default vals). We'll cover for this using a hack in
   couchdb_sup. The general idea is that we should work with sensible defaults
   without any external config.
@@ -29,6 +29,8 @@
 - This has nothing to do with the project, but it's surprising that the content
   type for a json response over http is text/plain and not application/json.
 
+  (Update - need to provide an accepts header to get the expected mime type.)
+
 - delayed_commit is really a big deal - no lie. Docs/sec around 20 with it off,
   up to 280 with it on. Bulk writes bumped up to over 2000. These are all
   consistent with http://books.couchdb.org/relax/reference/high-performance.
@@ -37,6 +39,8 @@
 
 - couch_icu_driver comes up when couch_util:collate/3 is called (e.g. new keys
   are added to a btree index).
+
+- Borrowed heavily from hovercraft for the select support.
 
 Services
 --------
@@ -84,15 +88,12 @@ Working:
  | _config
  | _session
  | _utils
-
-Not working:
-
- | /_active_tasks (needs couch_task_status proc - TODO)
- | _log
- | _status
- | _uuids (needs couch_uuids proc - TODO)
+ | _uuids
+ | /_active_tasks
 
 Not tested:
 
+ | _status
+ | _log
  | _replicate (almost certainly doesn't work)
  | _oauth (surely not working)

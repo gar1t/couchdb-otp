@@ -7,10 +7,11 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [%fun basic_db_test/0,
-             %fun basic_doc_test/0,
-             %fun batch_insert_test/0],
-             fun select_all_test/0],
+    Tests = [fun basic_db_test/0,
+             fun basic_doc_test/0,
+             fun batch_insert_test/0,
+             fun select_docs_test/0,
+             fun select_view_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -80,7 +81,7 @@ batch_insert_test() ->
 
     couchdb:delete_db(DbName).
 
-select_all_test() ->
+select_docs_test() ->
 
     DbName = random_dbname(),
     {ok, Db} = couchdb:open(DbName),
@@ -186,7 +187,26 @@ select_all_test() ->
     {4, 2, Rows11} = couchdb:select(Db, "2", undefined, [reverse]),
     ?assertEqual([<<"2">>, <<"1">>], [get_value(id, Row) || Row <- Rows11]),
 
+    % TODO - test stale
+
     couchdb:delete_db(DbName).
+
+select_view_test() ->
+    
+    DbName = random_dbname(),
+    {ok, Db} = couchdb:open(DbName),
+
+    % Seleting from a view is the same as normal selection with two exceptions:
+    %
+    % - The Source is a three tuple of {Db, Design, View}
+    % - The start and end values applies to *keys* rather than doc IDs
+    %
+    % Let's add some docs.
+
+    % TODO - add tests once we know how to add a view
+                                                
+    couchdb:delete_db(DbName).
+
 
 random_dbname() ->
     random:seed(erlang:now()),
