@@ -113,3 +113,72 @@ If for whatever reason we can't get this in, a more elaborate work around would
 be to move our API into a gen_server, which would give us control over the
 process dictionary. This might have some other benefits as well (rate control,
 pooling, etc.) for concurrent access - all TDB.
+
+Erlang Views
+============
+
+I'd like to see a more natural use of Erlang for building views.
+
+The module couch_native_process provides the road map.
+
+When a view is updated, the process is sent:
+
+ [<<"reset">>,{[{<<"reduce_limit">>,true}]}]
+ [<<"add_fun">>,
+   <<"fun({Doc}) ->\n  Emit(proplists:get_value(<<\"msg\">>, Doc), null)\nend.">>]
+ [<<"map_doc">>,
+   {[{<<"_id">>,<<"2eb38be2a696d1772651d02965ce67b1">>},
+     {<<"_rev">>,<<"1-5a6392aec3909c19d62f40aa01f416b4">>},
+     {msg,"hi"}]}]
+
+I'm not sure how many processes are created at this point. One per view, or one
+per database? Maybe one overall, where reset/add_fun is called for each map
+"job" that's run (whenever a view is read that needs updating).
+
+Rather than store an Erlang function as a string in the document, I'd like to
+see something else.
+
+Here's a map example as you'd expect to see in Erlang:
+
+7> F = fun(Doc, Acc) ->
+7>   case proplists:get_value(msg, Doc) of
+7>     undefined -> Acc;
+7>     Val -> [Val|Acc]
+7>   end
+7> end.
+#Fun<erl_eval.12.113037538>
+8> D1 = [{msg, "hi"}].
+[{msg,"hi"}]
+9> D2 = [].
+[]
+10> D3 = [{msg, "there"}].
+[{msg,"there"}]
+11> lists:foldl(F, [], [D1, D2, D3]).
+["there","hi"]
+
+I'd life to be able to do this:
+
+1> couchdb:put("_design/default", couchview:new(F)).
+
+All done!
+
+This would be stored as a binary encoded term.
+
+There's no reason for Emit or Send, though some of the informational functions
+like GetRow (surprisingly complex - not sure what it is yet) could be provided
+as an optional context arg to the map fun,
+
+1> F = fun(Doc, Acc, C) ->
+1>   case couchdb_c:get_row(C) of
+1>      SomeRow -> Acc;
+1>      _ -> [1|Acc]
+1>   end
+1> end.
+
+This is admitedly a perfect case for using a parameterized module:
+
+   case C:get_row() of
+     ...
+   end
+
+(I might have to eat my words about the One True Way.)

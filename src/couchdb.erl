@@ -13,7 +13,7 @@
          put_many/2,
          get/2, get/3,
          delete/2,
-         select/2, select/4]).
+         select/2, select/3, select/4]).
 
 %% ---------------------------------------------------------------------------
 %% @doc Convenience function to start couchdb app and dependent applications.
@@ -162,18 +162,21 @@ delete(Db, Id) ->
     end.
 
 %% ---------------------------------------------------------------------------
-%% @doc Selects from all documents.
-%%
-%%  Options    = options()
-%%  options()  = [option()]
-%%  option()   = {limit, int()}
-%%             | {skip, int()}
-%%             | reverse
-%%             | include_docs
+%% @doc Selects all documents or rows. See select/4 for more information.
 %% ---------------------------------------------------------------------------
 
 select(Source, Options) ->
     select(Source, undefined, undefined, Options).
+
+%% ---------------------------------------------------------------------------
+%% @doc Selects all documents or row matching a specified key of ID. See
+%% select/4 for more information.
+%%
+%% exlucde_end is ignored if specified in Options.
+%% ---------------------------------------------------------------------------
+
+select(Source, KeyOrId, Options) ->
+    select(Source, KeyOrId, KeyOrId, proplists:delete(exclude_end, Options)).
 
 %% ---------------------------------------------------------------------------
 %% @doc Selects a range of documents using start and end keys.
@@ -223,15 +226,12 @@ select(#db{name=DbName}, StartId0, EndId0, Options) ->
         [] -> {DocCount, DocCount, []}
     end;
 
-select({#db{name=DbName}, Design, View}, StartKey0, EndKey0, Options) ->
+select({#db{name=DbName}, Design, View}, StartKey, EndKey, Options) ->
     {ok, Db} = couch_db:open(DbName, []),
     BaseArgs = view_query_base_args(Options),
-    #view_query_args{direction=Dir,
-                     stale=Stale,
+    #view_query_args{stale=Stale,
                      limit=Limit,
                      skip=Skip} = BaseArgs,
-    StartKey = view_start(StartKey0, Dir),
-    EndKey = view_end(EndKey0, Dir),
     Args = BaseArgs#view_query_args{start_key=StartKey, end_key=EndKey},
     try couch_view:get_map_view(Db, design_id(Design), to_bin(View), Stale) of
         {ok, Map, _} ->

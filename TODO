@@ -4,14 +4,14 @@
 
 In no particular order (brain dump):
 
+- API support for adding views (sugar)
+- Support for reduce ops
 - Replication
+- Improved errors for Futon (in scope? woud be nice)
 - Documentation
 - Sample apps (e.g. blog, etc.)
 - Tests
 - Attachments
-- Map/reduce (views?)
-- Indexes
-- Tasks (e.g. /_active_tasks needs a proc, probably an optional service)
 
 Selecting from Views
 ====================
@@ -19,3 +19,11 @@ Selecting from Views
 Currently the API only supports *keys* and it looks like it could support doc
 IDs as well, though I'm not sure how that works. The HTTP interface accepts
 startkey_docid and endkey_docid, but I'm not sure how it works.
+
+Shutting Down
+=============
+
+Calling application:stop(couchdb) after the JavaScript port has started is a
+big mess (add to a document and then select from a JavaScript view to start the
+port). We need a clean shutdown. The couchjs process is closed cleanly - but
+sasl complains.
