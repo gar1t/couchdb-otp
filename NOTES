@@ -97,3 +97,19 @@ Not tested:
  | _log
  | _replicate (almost certainly doesn't work)
  | _oauth (surely not working)
+
+ICU Driver and Ports
+====================
+
+couch_util:drv_port/0 uses the process dictionary to cache the driver
+port. This is a big problem for anyone using couchdb:select from multiple
+processes - each process gets its own port.
+
+The driver port should be registered under a well known name.
+
+See drv_port.patch
+
+If for whatever reason we can't get this in, a more elaborate work around would
+be to move our API into a gen_server, which would give us control over the
+process dictionary. This might have some other benefits as well (rate control,
+pooling, etc.) for concurrent access - all TDB.

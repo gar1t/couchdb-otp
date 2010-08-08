@@ -1,0 +1,25 @@
+Index: src/couchdb/couch_util.erl
+===================================================================
+--- src/couchdb/couch_util.erl	(revision 981307)
++++ src/couchdb/couch_util.erl	(working copy)
+@@ -240,13 +240,13 @@
+ 
+ 
+ drv_port() ->
+-    case get(couch_drv_port) of
+-    undefined ->
+-        Port = open_port({spawn, "couch_icu_driver"}, []),
+-        put(couch_drv_port, Port),
+-        Port;
+-    Port ->
+-        Port
++    case whereis(couch_drv_port) of
++        undefined ->
++            Port = open_port({spawn, "couch_icu_driver"}, []),
++            register(couch_drv_port, Port),
++            Port;
++        Port ->
++            Port
+     end.
+ 
+ collate(A, B) ->
