@@ -254,7 +254,7 @@ select({#db{}=Db0, Design, View}, StartKey, EndKey, Options) ->
 
 %% ---------------------------------------------------------------------------
 %% @doc Reopens the database. This is needed for most db operations. We use the
-%% #doc record as our opaque db representation for convenience to the user.
+%% #db record as our opaque db representation for convenience to the user.
 %%
 %% This has the upside of preserving user context when the db was open.
 %% ---------------------------------------------------------------------------
