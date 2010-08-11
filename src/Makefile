@@ -12,6 +12,10 @@ CONFIG := empty
 # suffix)
 CONFIG_PATH := ../priv/$(CONFIG)
 
+# To remove tests from modules, override ERLC_OPTS.
+#
+ERLC_OPTS := -DTEST
+
 # Generally, the rest of these don't need to be overridden.
 
 APP_DIR := ..
@@ -36,18 +40,23 @@ ERL_OBJECTS := $(ERL_SOURCES:%.erl=$(EBIN_DIR)/%.beam)
 PA_OPTS := -pa $(MOCHIWEB_EBIN) -pa $(COUCHDB_EBIN) -pa $(EBIN_DIR)
 ERL_OPTS := $(PA_OPTS) -config $(CONFIG_PATH)
 
+# TODO - To makefile gurus, I want to add a dependency on _test.hrl files so
+# that we can used the "include test" pattern and have the erl files recompile
+# when their tests change. How can we add a dependency on tests but still
+# compile modules that don't have _tests.hrl files?
+
 $(EBIN_DIR)/%.beam: %.erl
 	$(ERLC) -I $(INCLUDE_DIR) $(ERLC_FLAGS) -o $(EBIN_DIR) $<
 
-app:  $(ERL_OBJECTS)
+app: $(ERL_OBJECTS)
 
 release: app
 
 test: $(ERL_OBJECTS)
-	$(ERL) $(ERL_OPTS) -noshell -s $(TESTS) test -s init stop
+	$(ERL) $(TEST_OPTS) $(ERL_OPTS) -noshell -s $(TESTS) test -s init stop
 
 shell: $(ERL_OBJECTS)
-	$(ERL) $(ERL_OPTS) $(SHELL_OPTS) -s reloader -s couchdb
+	$(ERL) $(SHELL_OPTS) $(ERL_OPTS) $(SHELL_OPTS) -s reloader -s couchdb
 
 clean:
 	rm -rf $(EBIN_DIR)/*.beam

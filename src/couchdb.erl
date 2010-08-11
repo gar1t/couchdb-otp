@@ -39,9 +39,10 @@ start() ->
 open(Name) ->
     open(Name, []).
 
-open(Name, Options) ->
+open(Name, Options0) ->
+    Options = maybe_add_admin_role(Options0),
     case couch_db:open(to_bin(Name), Options) of
-        {not_found,no_db_file} ->
+        {not_found, no_db_file} ->
             couch_server:create(to_bin(Name), Options);
         Other -> Other
     end.
@@ -105,7 +106,8 @@ all_dbs() ->
 put(Db, Doc) ->
     put(Db, Doc, []).
 
-put(Db, Doc, Options) ->
+put(#db{}=Db0, Doc, Options) ->
+    Db = reopen(Db0),
     case couch_db:update_doc(Db, Doc, Options) of
         {ok, {Start, RevId}} -> 
             {ok, Doc#doc{revs={Start, [RevId]}}};
@@ -116,7 +118,8 @@ put(Db, Doc, Options) ->
 %% @doc Stores documents in bulk.
 %% ---------------------------------------------------------------------------
 
-put_many(Db, Docs) ->
+put_many(#db{}=Db0, Docs) ->
+    Db = reopen(Db0),
     {ok, Result} = couch_db:update_docs(Db, Docs),
     lists:zipwith(fun({ok, {Start, RevId}}, Doc) -> 
                           {ok, Doc#doc{revs={Start, [RevId]}}};
@@ -128,20 +131,13 @@ put_many(Db, Docs) ->
 %% @doc Retrieves a document.
 %%
 %% TODO: more here
-%%
-%% TODO: I'm not clear on how to properly handle this. Hovercraft requires the
-%% db *name* here (hovercraft:open_doc/3) and not the db ref (I'm not a fan of
-%% that API here because it breaks symmetry with the other functions). It opens
-%% a new db, which can be used to read any documents that have been added since
-%% the db was opened. I'm basically hacking this to re-open the db so it can
-%% see new items. Is there a better/cleaner way to do this?
 %% ---------------------------------------------------------------------------
 
 get(Db, Id) ->
     get(Db, Id, []).
 
-get(#db{name=DbName}, Id, Options) ->
-    {ok, Db} = couch_db:open(DbName, []),
+get(#db{}=Db0, Id, Options) ->
+    Db = reopen(Db0),
     case couch_db:open_doc(Db, to_bin(Id), Options) of
         {ok, Doc} -> {ok, Doc};
         Err -> Err
@@ -151,15 +147,21 @@ get(#db{name=DbName}, Id, Options) ->
 %% @doc Removes Doc from Db.
 %% ---------------------------------------------------------------------------
 
-delete(Db, #doc{}=Doc) ->
-    % NOTE: Not using couch_db:delete_doc/3 - bug as of r980985.
-    {ok, [Result]} = couch_db:update_docs(Db, [Doc#doc{deleted=true}], []),
-    Result;
-delete(Db, Id) ->
-    case get(Db, Id) of
-        {ok, Doc} -> delete(Db, Doc);
-        Other -> Other
+delete(#db{}=Db0, #doc{}=Doc) ->
+    Db = reopen(Db0),
+    delete_doc(Db, Doc);
+delete(#db{}=Db0, Id) ->
+    Db = reopen(Db0),
+    case couch_db:open_doc(Db, to_bin(Id), []) of
+        {ok, Doc} ->
+            delete_doc(Db, Doc);
+        Err -> Err
     end.
+
+delete_doc(Db, #doc{revs={Start, [Rev|_]}}=Doc) ->
+    DelDoc = Doc#doc{revs={Start, [Rev]}, deleted=true},
+    {ok, [Result]} = couch_db:update_docs(Db, [DelDoc], []),
+    Result.
 
 %% ---------------------------------------------------------------------------
 %% @doc Selects all documents or rows. See select/4 for more information.
@@ -205,8 +207,8 @@ select(Source, KeyOrId, Options) ->
 %% TODO: how do you denote an optional property in a proplist (doc above)
 %% ---------------------------------------------------------------------------
 
-select(#db{name=DbName}, StartId0, EndId0, Options) ->
-    {ok, Db} = couch_db:open(DbName, []),
+select(#db{}=Db0, StartId0, EndId0, Options) ->
+    Db = reopen(Db0),
     BaseArgs = view_query_base_args(Options),
     #view_query_args{direction=Dir,
                      limit=Limit,
@@ -226,8 +228,8 @@ select(#db{name=DbName}, StartId0, EndId0, Options) ->
         [] -> {DocCount, DocCount, []}
     end;
 
-select({#db{name=DbName}, Design, View}, StartKey, EndKey, Options) ->
-    {ok, Db} = couch_db:open(DbName, []),
+select({#db{}=Db0, Design, View}, StartKey, EndKey, Options) ->
+    Db = reopen(Db0),
     BaseArgs = view_query_base_args(Options),
     #view_query_args{stale=Stale,
                      limit=Limit,
@@ -249,6 +251,17 @@ select({#db{name=DbName}, Design, View}, StartKey, EndKey, Options) ->
 %% ===========================================================================
 %% Private functions
 %% ===========================================================================
+
+%% ---------------------------------------------------------------------------
+%% @doc Reopens the database. This is needed for most db operations. We use the
+%% #doc record as our opaque db representation for convenience to the user.
+%%
+%% This has the upside of preserving user context when the db was open.
+%% ---------------------------------------------------------------------------
+
+reopen(#db{name=Name, user_ctx=Ctx}) ->
+    {ok, Db} = open(Name, []),
+    Db#db{user_ctx=Ctx}.
 
 %% ---------------------------------------------------------------------------
 %% @doc Returns a binary for a list or a binary. Used to ensure that various
@@ -411,3 +424,16 @@ fold_view_options(#view_query_args{start_key=StartKey, direction=Dir}) ->
     %% the unbounded val
     Start = {StartKey, unbound_start(Dir)},
     [{dir, Dir}, {start_key, Start}].
+
+%% ---------------------------------------------------------------------------
+%% @doc Adds an _admin role user context if user_ctx isn't specified in
+%% Options.
+%% ---------------------------------------------------------------------------
+
+maybe_add_admin_role(Options) ->
+    case proplists:get_value(user_ctx, Options) of
+        undefined ->
+            [{user_ctx, #user_ctx{roles=[<<"_admin">>]}}|Options];
+        _ ->
+            Options
+    end.

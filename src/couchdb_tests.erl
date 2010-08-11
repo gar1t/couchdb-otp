@@ -7,11 +7,11 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [fun basic_db_test/0,
-             fun basic_doc_test/0,
-             fun batch_insert_test/0,
-             fun select_docs_test/0,
-             fun select_view_test/0],
+    Tests = [%fun basic_db_test/0,
+             %fun basic_doc_test/0,
+             %fun batch_insert_test/0,
+             %fun select_docs_test/0,
+             fun basic_view_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -191,22 +191,52 @@ select_docs_test() ->
 
     couchdb:delete_db(DbName).
 
-select_view_test() ->
+basic_view_test() ->
     
     DbName = random_dbname(),
     {ok, Db} = couchdb:open(DbName),
 
-    % Seleting from a view is the same as normal selection with two exceptions:
-    %
-    % - The Source is a three tuple of {Db, Design, View}
-    % - The start and end values applies to *keys* rather than doc IDs
-    %
-    % Let's add some docs.
+    % Views are lazily created indexes on databases. Let's create some
+    % documents to index.
 
-    % TODO - add tests once we know how to add a view
-                                                
+    D1 = couchdoc:new(
+           "biking", 
+           [{"_rev", "AE19EBC7654"},
+            {"title", "Biking"},
+            {"body", "My biggest hobby is mountainbiking. The other day..."},
+            {"date", "2009/01/30 18:04:11"}]),
+    D2 = couchdoc:new(
+           "bought-a-cat",
+           [{"_rev", "4A3BBEE711"},
+            {"title", "Bought a Cat"},
+            {"body", "I went to the the pet store earlier and brought home "
+             "a little kitty..."},
+            {"date", "2009/02/17 21:13:39"}]),
+    D3 = couchdoc:new(
+           "hello-world",
+           [{"_rev", "43FBA4E7AB"},
+            {"title", "Hello World"},
+            {"body", "Well hello and welcome to my new blog..."},
+            {"date", "2009/01/15 15:52:20"}]),
+
+    couchdb:put_many(Db, [D1, D2, D3]),
+
+    Map = fun(Doc, Acc) ->
+                [{get_value("date", Doc), 
+                  get_value("title", Doc)}|Acc]
+        end,
+    DDoc = couchdoc:new("_design/default",
+                        [{language, "otp"},
+                         {views, [{by_date, Map}]}]),
+
+    % Syntactic sugar for creating a full fledged design doc.
+    couchdoc:new_design("default", [{by_date, Map}]),
+
+    couchdb:put(Db, DDoc),
+
+    couchdb:select({Db, "default", "by_date"}, []),
+    
     couchdb:delete_db(DbName).
-
 
 random_dbname() ->
     random:seed(erlang:now()),

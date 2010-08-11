@@ -42,6 +42,11 @@
 
 - Borrowed heavily from hovercraft for the select support.
 
+- A number of couchdb functions don't work unless the db is re-opened. I'm
+  currently doing this implicitly by pulling the dbname off the db record. I
+  think this is the right approach as the user doesn't have to worry about what
+  to pass in as Db -- it's always what's returned by open.
+
 Services
 --------
 
