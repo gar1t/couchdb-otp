@@ -63,30 +63,57 @@ code_change(_OldVsn, State, _Extra) ->
 
 to_fun(B) when is_binary(B) ->
     try binary_to_term(B) of
-        Fun when is_function(Fun) -> Fun
+        Term -> term_to_fun(Term)
     catch
         error:badarg -> to_fun(binary_to_list(B))
     end;
 
-to_fun(S) when is_list(S) ->           
-    {ok, Tokens, _} = erl_scan:string(S),
-    case erl_parse:parse_exprs(Tokens) of
-        {ok, [Parsed]} ->
-            try erl_eval:expr(Parsed, []) of
-                {value, Fun, _} -> Fun
-            catch
-                error:Err -> throw(Err)
+to_fun(S) when is_list(S) ->
+    case erl_scan:string(S) of
+        {ok, Tokens, _} ->
+            case erl_parse:parse_exprs(Tokens) of
+                {ok, [Parsed]} ->
+                    try erl_eval:expr(Parsed, []) of
+                        {value, Term, _} -> term_to_fun(Term)
+                    catch
+                        error:Err -> throw(Err)
+                    end;
+                {error, {Line, _Mod, [Msg, Params]}} ->
+                    throw(lists:concat([Msg, Params, " on line ", Line]))
             end;
-        {error, {Line, _Mod, [Msg, Params]}} ->
-            throw(lists:concat([Msg, Params, " on line ", Line]))
+        {error, {Line, erl_scan, {string, _Char, Str}}, _Loc} ->
+            throw(lists:concat(["Bad char on line ", Line, " at: ", Str]))
     end.
+
+%% ---------------------------------------------------------------------------
+%% @doc Returns a support fun type or throws {invalid_fun_spec, Term}.
+%% ---------------------------------------------------------------------------
+
+term_to_fun(F) when is_function(F) -> F;
+term_to_fun({M, F}=T) when is_atom(M) andalso is_atom(F) -> T;
+term_to_fun({M, F, A}=T) when is_atom(M) andalso 
+                              is_atom(F) andalso 
+                              is_list(A) -> T;
+term_to_fun(Term) -> throw({invalid_fun_spec, Term}). 
 
 %% ---------------------------------------------------------------------------
 %% @doc Applies a fun to a document map operation.
 %% ---------------------------------------------------------------------------
 
 apply_map(Fun, Doc) ->
-    to_couch_map(Fun(Doc, []), []).
+    AccIn = [],
+    try apply_map(Fun, Doc, AccIn) of
+        AccOut -> to_couch_map(AccOut, [])
+    catch
+        _:Err -> throw({map_error, {Err, erlang:get_stacktrace()}})
+    end.
+
+apply_map({M, F}, Doc, AccIn) ->
+    apply(M, F, [Doc, AccIn]);
+apply_map({M, F, A}, Doc, AccIn) when is_list(A) -> 
+    apply(M, F, [Doc, AccIn] ++ A);
+apply_map(F, Doc, AccIn) when is_function(F) ->
+    F(Doc, AccIn).
 
 %% ---------------------------------------------------------------------------
 %% @doc Converts {Key, Val} tuples into [Key, Val] and single key values into

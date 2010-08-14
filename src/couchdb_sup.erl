@@ -2,11 +2,7 @@
 
 -behaviour(supervisor).
 
--export([start_link/0,
-         start_optional/0,
-         start_optional/1,
-         stop_optional/0,
-         stop_optional/1]).
+-export([start_link/0]).
 
 % Non-standard start functions.
 -export([start_config_wrapper/1]).
@@ -15,10 +11,6 @@
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
-
--define(VIEW_SUPPORT, [couch_view, couch_task_status, couch_query_servers]).
--define(HTTPD_SUPPORT, [couch_httpd, couch_uuids|?VIEW_SUPPORT]).
--define(ALL_OPTIONAL, [couch_log|?HTTPD_SUPPORT]).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
@@ -53,58 +45,6 @@ couch_ini() ->
         _ -> []
     end.
 
-%%---------------------------------------------------------------------------
-%% @doc Starts all of the optional CouchDB services. To start a specific list
-%% of services, use start_optional/1.
-%% ---------------------------------------------------------------------------
-
-start_optional() ->
-    start_optional(?ALL_OPTIONAL).
-
-%%---------------------------------------------------------------------------
-%% @doc Starts a specific list of optional CouchDB services.
-%% ---------------------------------------------------------------------------
-
-start_optional(view_support) ->
-    start_optional(?VIEW_SUPPORT);
-start_optional(httpd_support) ->
-    start_optional(?HTTPD_SUPPORT);
-start_optional([]) -> ok;
-start_optional([couch_httpd|T]) -> 
-    start_optional_service({couch_httpd, {?MODULE, start_httpd_wrapper, []},
-                            permanent, 1000, worker, [couch_httpd]}),
-    start_optional(T);
-start_optional([couch_uuids|T]) -> 
-    % couch_uuids:start/0 is a link.
-    start_optional_service({couch_uuids, {couch_uuids, start, []},
-                            permanent, brutal_kill, worker, [couch_uuids]}),
-    start_optional(T);
-start_optional([Module|T]) ->
-    start_optional_service({Module, {Module, start_link, []},
-                            permanent, brutal_kill, worker, [Module]}),
-    start_optional(T).
-
-
-%% ---------------------------------------------------------------------------
-%% @doc Stops the optional CouchDB services.
-%% ---------------------------------------------------------------------------
-
-stop_optional() ->
-    stop_optional(lists:reverse(?ALL_OPTIONAL)).
-
-%% ---------------------------------------------------------------------------
-%% @doc Stops a specific list of optional CouchDB services.
-%% ---------------------------------------------------------------------------
-
-stop_optional(view_support) ->
-    stop_optional(lists:reverse(?VIEW_SUPPORT));
-stop_optional(httpd_support) ->
-    stop_optional(lists:reverse(?HTTPD_SUPPORT));
-stop_optional([]) -> ok;
-stop_optional([Module|T]) ->
-    stop_optional_service(Module),
-    stop_optional(T).
- 
 %%---------------------------------------------------------------------------
 %% @doc Sets any missing config values to sensible defaults.
 %%
@@ -150,19 +90,3 @@ set_missing_config(S, K, Val) ->
         undefined -> couch_config:set(S, K, Val);
         _ -> ok
     end.
-
-start_optional_service(Spec) ->
-    {Id, _,_,_,_,_} = Spec,
-    case supervisor:start_child(?SERVER, Spec) of
-        {ok, Pid} ->
-            {ok, Pid};
-        {error, already_present} ->
-            supervisor:restart_child(?SERVER, Id);
-        {error, {already_started, Pid}} ->
-            {error, {already_started, Pid}};
-        Err -> 
-            exit(Err)
-    end.
-
-stop_optional_service(Id) ->
-    supervisor:terminate_child(?SERVER, Id).

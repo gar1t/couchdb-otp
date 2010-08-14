@@ -2,16 +2,19 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--export([test/0]).
+-export([test/0,
+         map_date_title/2,
+         map_date_title/3]).
 
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [%fun basic_db_test/0,
-             %fun basic_doc_test/0,
-             %fun batch_insert_test/0,
-             %fun select_docs_test/0,
-             fun basic_view_test/0],
+    Tests = [fun basic_db_test/0,
+             fun basic_doc_test/0,
+             fun batch_insert_test/0,
+             fun select_docs_test/0,
+             fun basic_view_test/0,
+             fun view_support_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -192,6 +195,9 @@ select_docs_test() ->
     couchdb:delete_db(DbName).
 
 basic_view_test() ->
+
+    % These tests require view support.
+    couchdb_optional:start(view_support),
     
     DbName = random_dbname(),
     {ok, Db} = couchdb:open(DbName),
@@ -221,22 +227,135 @@ basic_view_test() ->
 
     couchdb:put_many(Db, [D1, D2, D3]),
 
-    Map = fun(Doc, Acc) ->
-                [{get_value("date", Doc), 
-                  get_value("title", Doc)}|Acc]
-        end,
-    DDoc = couchdoc:new("_design/default",
-                        [{language, "otp"},
-                         {views, [{by_date, Map}]}]),
+    % At a minimum, a view requires a map function that maps documents to zero
+    % or more key value pairs. The key/value pairs are indexed by key and can
+    % be used to retrieve and sort values quickly.
+    %
+    % Map functions use "folding" to append key/value pairs to an accumulator.
+    %
+    % Here's a map function that provides date/title pairs, which will create a
+    % view that let's use select and sort documents by date.
+    %
+    % couchdb_nqs supports map functions in the following forms:
+    %
+    % - function source code (same as default CouchDB definition)
+    % - Binary encoded Erlang fun of arity 2
+    % - string {M, F} of a 2-arity function (Doc, Acc)
+    % - string {M, F, A} of a 3-arity function (Doc, Args, Acc)
+    %
+    % Let's start with a function defined as a string. This follows the pattern
+    % used by CouchDB in which map functions are stored as JavaScript.
 
-    % Syntactic sugar for creating a full fledged design doc.
-    couchdoc:new_design("default", [{by_date, Map}]),
+    MapStr = 
+        <<"fun(Doc, Acc) -> "
+          "  [{proplists:get_value(\"date\", Doc),"
+          "    proplists:get_value(\"title\", Doc)}|Acc]"
+          "end.">>,
 
-    couchdb:put(Db, DDoc),
+    % We add a view as a property of a special "design" document. CouchDB uses
+    % the "_design/" ID prefix to designate a document as one of these special
+    % documents.
+    %
+    % In addition to the views, the design document must specify a language. In
+    % this case, we use "otp", which must be registered to use couchdb_nqs
+    % (native query server).
 
-    couchdb:select({Db, "default", "by_date"}, []),
+    DDoc1 = couchdoc:new("_design/otp_str",
+                        [{<<"language">>, <<"otp">>},
+                         {<<"views">>, [{<<"by_date">>,
+                                         [{<<"map">>, MapStr}]}]}]),
+    couchdb:put(Db, DDoc1),
+
+    % We can now select using this view.
+
+    R1 = couchdb:select({Db, "otp_str", "by_date"}, []),
+
+    % Here's what we expect from this map:
+
+    Expected = {3,0, [[{id, <<"hello-world">>},
+                       {key, "2009/01/15 15:52:20"},
+                       {value, "Hello World"}],
+                      [{id, <<"biking">>},
+                       {key, "2009/01/30 18:04:11"},
+                       {value, "Biking"}],
+                      [{id, <<"bought-a-cat">>},
+                       {key, "2009/02/17 21:13:39"},
+                       {value, "Bought a Cat"}]]},
+    ?assertEqual(Expected, R1),
+
+    % Note that the document IDs are returned as binary strings even though
+    % they were originally inserts as lists. This is how CouchDB stores IDs.
+    %
+    % In the result, we see that items are returned with the document ID, and
+    % the key and value provided by the map function.
+    %
+    % The rows are also ordered by their key, which is a date in this case.
+    %
+    % Let's using the same function, but encoded as an Erlang term.
+
+    MapFun = fun(Doc, Acc) ->
+                     [{get_value("date", Doc), get_value("title", Doc)}|Acc]
+             end,
+    MapFunBin = term_to_binary(MapFun),
+    DDoc2 = couchdoc:new("_design/otp_fun",
+                        [{<<"language">>, <<"otp">>},
+                         {<<"views">>, [{<<"by_date">>,
+                                         [{<<"map">>, MapFunBin}]}]}]),
+    couchdb:put(Db, DDoc2),
+
+    % Note that the fun uses the imported function get_value/2 from the
+    % proplists module. One of the benefits of using an encoded fun is that it
+    % provides a persistent closure that is used for indexing.
+
+    % Let's use the view.
     
+    R2 = couchdb:select({Db, "otp_fun", "by_date"}, []),
+    ?assertEqual(Expected, R2),
+
+    % Let's now provide a two-tuple of module and function for our map. Note
+    % that the term must be terminated with a period.
+    
+    MF = <<"{couchdb_tests, map_date_title}.">>,
+    DDoc3 = couchdoc:new("_design/otp_mf",
+                        [{<<"language">>, <<"otp">>},
+                         {<<"views">>, [{<<"by_date">>,
+                                         [{<<"map">>, MF}]}]}]),
+    couchdb:put(Db, DDoc3),
+
+    % Our exported function map_date_title/2 provides the same mapping as the
+    % previous two functions.
+
+    R3 = couchdb:select({Db, "otp_mf", "by_date"}, []),
+    ?assertEqual(Expected, R3),
+
+    % Let's round out the examples with the fourth variant: a {M, F, A} tuple
+    % representation where A is a list of arguments that are appended to the
+    % [Doc, Acc] list when calling the function.
+
+    MFA = <<"{couchdb_tests, map_date_title, [myarg]}.">>,
+    DDoc4 = couchdoc:new("_design/otp_mfa",
+                        [{<<"language">>, <<"otp">>},
+                         {<<"views">>, [{<<"by_date">>,
+                                         [{<<"map">>, MFA}]}]}]),
+    couchdb:put(Db, DDoc4),
+
+    % In this view, we'll be using map_data_title/3 below.
+
+    R4 = couchdb:select({Db, "otp_mfa", "by_date"}, []),
+    ?assertEqual(Expected, R4),
+
     couchdb:delete_db(DbName).
+
+
+view_support_test() ->
+    % TODO - work on simplifying the use of views
+    ok.
+
+map_date_title(Doc, Acc) ->
+    [{get_value("date", Doc), get_value("title", Doc)}|Acc].
+
+map_date_title(Doc, Acc, myarg) ->
+    map_date_title(Doc, Acc).
 
 random_dbname() ->
     random:seed(erlang:now()),

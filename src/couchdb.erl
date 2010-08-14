@@ -238,11 +238,14 @@ select({#db{}=Db0, Design, View}, StartKey, EndKey, Options) ->
     try couch_view:get_map_view(Db, design_id(Design), to_bin(View), Stale) of
         {ok, Map, _} ->
             {ok, RowCount} = couch_view:get_row_count(Map),
-            {ok, _, {_, _, _, {Offset, Rows}}} = 
-                couch_view:fold(Map, fold_view_acc_fun(Db, RowCount, Args),
+            case couch_view:fold(Map, fold_view_acc_fun(Db, RowCount, Args),
                                 {Limit, Skip, undefined, []}, 
-                                fold_view_options(Args)),
-            {RowCount, Offset, lists:reverse(Rows)};
+                                fold_view_options(Args)) of
+                {ok, _, {_, _, _, {Offset, Rows}}} ->
+                    {RowCount, Offset, lists:reverse(Rows)};
+                {ok, _, {_, _, _, []}} ->
+                    {RowCount, 0, []}
+            end;
         {not_found, missing_named_view} -> {error, view_not_found}
     catch
         _:{not_found, missing} -> {error, design_not_found}

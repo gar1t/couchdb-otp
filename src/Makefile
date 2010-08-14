@@ -56,7 +56,7 @@ test: $(ERL_OBJECTS)
 	$(ERL) $(TEST_OPTS) $(ERL_OPTS) -noshell -s $(TESTS) test -s init stop
 
 shell: $(ERL_OBJECTS)
-	$(ERL) $(SHELL_OPTS) $(ERL_OPTS) $(SHELL_OPTS) -s reloader -s couchdb
+	$(ERL) $(ERL_OPTS) -s reloader -s couchdb $(SHELL_OPTS) 
 
 clean:
 	rm -rf $(EBIN_DIR)/*.beam
