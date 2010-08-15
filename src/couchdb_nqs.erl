@@ -113,7 +113,8 @@ apply_maps([F|T], Doc, Acc) ->
 apply_map(Fun, Doc) ->
     AccIn = [],
     try apply_map(Fun, Doc, AccIn) of
-        AccOut -> to_couch_map(AccOut, [])
+        AccOut -> 
+            to_couch_map(AccOut, [])
     catch
         _:Err -> throw({map_error, {Err, erlang:get_stacktrace()}})
     end.

@@ -2,28 +2,19 @@
  To Do
 =======
 
-In no particular order (brain dump):
+For 0.1 Release
+===============
 
-- API support for adding views (sugar)
 - Support for reduce ops
-- Replication
-- Improved errors for Futon (in scope? woud be nice)
-- Documentation
+- Verify/test composite keys
+- Review TODO notes and finish or mark with target revision (future)
 - Sample apps (e.g. blog, etc.)
+- Replication story (at least doc what is supported)
+- Documentation
 - Tests
+
+Future Versions
+===============
+
 - Attachments
-
-Selecting from Views
-====================
-
-Currently the API only supports *keys* and it looks like it could support doc
-IDs as well, though I'm not sure how that works. The HTTP interface accepts
-startkey_docid and endkey_docid, but I'm not sure how it works.
-
-Shutting Down
-=============
-
-Calling application:stop(couchdb) after the JavaScript port has started is a
-big mess (add to a document and then select from a JavaScript view to start the
-port). We need a clean shutdown. The couchjs process is closed cleanly - but
-sasl complains.
+- Validation functions (might move this to 0.1)

@@ -9,13 +9,15 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [%fun basic_db_test/0,
-             %fun basic_doc_test/0,
-             %fun batch_insert_test/0,
-             %fun select_docs_test/0,
-             %fun basic_view_test/0,
-             %fun view_support_test/0,
-             fun term_store_test/0],
+    Tests = [fun basic_db_test/0,
+             fun basic_doc_test/0,
+             fun batch_insert_test/0,
+             fun select_docs_test/0,
+             fun basic_view_test/0,
+             fun view_support_test/0,
+             fun term_store_test/0,
+             fun composite_id_pattern_test/0,
+             fun composite_key_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -407,7 +409,6 @@ view_support_test() ->
     couchdb:delete_db(DbName).
 
 term_store_test() ->
-
     couchdb_optional:start(view_support),    
     DbName = random_dbname(),
     {ok, Db} = couchdb:open(DbName),
@@ -454,7 +455,177 @@ term_store_test() ->
                          [{id, <<"joe">>}, {key, "user"}, {value, null}]]},
                  ByRoleR),
 
-    ok. %couchdb:delete_db(DbName).    
+    couchdb:delete_db(DbName).
+
+composite_id_pattern_test() ->
+    DbName = random_dbname(),
+    {ok, Db} = couchdb:open(DbName),
+
+    % CouchDB indexes database docs using a b+tree index on the doc IDs. To
+    % group related data using IDs, we can use a "composite ID" pattern.
+    
+    % Here's a simple blog post.
+
+    P = couchdoc:new("blog-1/post-1", 
+                     [{time, "12:34"},
+                      {by, "Frank"},
+                      {text, "CouchDB is fun!"}]),
+    couchdb:put(Db, P),
+
+    % Here are some comments.
+
+    C1 = couchdoc:new("blog-1/post-1/comment-1",
+                      [{time, "12:35"},
+                       {by, "Mary"},
+                       {text, "And bouncy!"}]),
+    couchdb:put(Db, C1),
+
+    C2 = couchdoc:new("blog-1/post-1/comment-2",
+                      [{time, "12:45"},
+                       {by, "Bob"},
+                       {text, "Bouncy?"}]),
+    couchdb:put(Db, C2),
+
+    % We can retrieve all of the documents associated with a blog post using
+    % the "blog-1/" prefix.
+
+    {_, _, Rows} = couchdb:select(Db, "blog-1/", []),
+    ?assertEqual([<<"blog-1/post-1">>,
+                  <<"blog-1/post-1/comment-1">>,
+                  <<"blog-1/post-1/comment-2">>],
+                 [get_value(id, Row) || Row <- Rows]),
+
+    % Document IDs are limited to using list/binary keys. For more flexibility
+    % in defining keys from document attributes, use a view (see
+    % composite_key_test below).
+
+    couchdb:delete_db(DbName).
+
+composite_key_test() ->
+    couchdb_optional:start(view_support),    
+    DbName = random_dbname(),
+    {ok, Db} = couchdb:open(DbName),
+
+    % Maps can use any Erlang term to index document info. We can use this to
+    % create composite keys that group related data together. This is similar
+    % to the "composite id pattern" illustrated above but is more flexible.
+
+    % Let's create some blog documents that use randomly assigned IDs and
+    % attribute references to related documents. We'll also use a 'type'
+    % attribute to distinguish one document type from another.
+
+    B = couchdoc:new("899",
+                     [{type, blog},
+                      {name, "My Blog"},
+                      {by, "Frank"}]),
+    P = couchdoc:new("341",
+                     [{type, post},
+                      {blog, "899"},
+                      {time, "12:34"},
+                      {by, "Frank"},
+                      {text, "CouchDB is fun!"}]),
+    C1 = couchdoc:new("154",
+                      [{type, comment},
+                       {blog, "899"},
+                       {post, "341"},
+                       {time, "12:35"},
+                       {by, "Mary"},
+                       {text, "And bouncy!"}]),
+    C2 = couchdoc:new("022",
+                      [{type, comment},
+                       {blog, "899"},
+                       {post, "341"},
+                       {time, "12:45"},
+                       {by, "Bob"},
+                       {text, "Bouncy?"}]),
+
+    couchdb:put_many(Db, [B, P, C1, C2]),
+
+    % Let's also add some other blogs.
+
+    couchdb:put(Db, couchdoc:new("102", [{type, blog}])),
+    couchdb:put(Db, couchdoc:new("898", [{type, blog}])),
+    couchdb:put(Db, couchdoc:new("900", [{type, blog}])),
+
+    % Getting all of the documents...
+
+    {7, 0, All} = couchdb:select(Db, []),
+    ?assertEqual(7, length(All)),
+
+    % Let's create a view that will let us access the hierarchy of blogs,
+    % posts, and comments.
+
+    % TODO - Accessing doc IDs using binaries here is fuggly. Would it make
+    % more sense to provide them as opaque #doc records and let users access
+    % the data using couchdoc/couchterm (which could be imported for
+    % compactness of code).
+    
+    % TODO - Not preserving key types (string vs binary) is annoying. Do we
+    % have to convert to binary when storing?
+
+    Map = fun(Doc, Acc) ->
+                  case get_value(type, Doc) of
+                      blog ->
+                          [[binary_to_list(get_value(<<"_id">>, Doc))]
+                           |Acc];
+                      post ->
+                          [[get_value(blog, Doc), 
+                            binary_to_list(get_value(<<"_id">>, Doc))]
+                           |Acc];
+                      comment ->
+                          [[get_value(blog, Doc),
+                            get_value(post, Doc),
+                            binary_to_list(get_value(<<"_id">>, Doc))]
+                           |Acc];
+                      _ -> Acc
+                  end
+          end,
+    couchdb:put(Db, couchdesign:new("blog", [{view, {"list", Map}}])),
+
+    % We can use to select documents at different levels. To get all of the
+    % documents associated with blog ID "899", including posts and comments,
+    % we'd use a select like this.
+
+    % TODO - We should be able to use a single key and the "starts with"
+    % behavior should just work. Alas, not so.
+
+    {_, _, [R1]} = couchdb:select({Db, "blog", "list"}, ["899"], []),
+    ["899"] = get_value(key, R1),
+
+    % TODO - It looks like there's a bug here. The result includes {key,
+    % ["900"]}, which is an exact match of the end key, despite the exclude_end
+    % option.
+
+    {_, _, R2} = couchdb:select({Db, "blog", "list"}, ["899"], ["900"],
+                                [exclude_end]),
+    ["900"] = get_value(key, lists:last(R2)),
+    
+    % TOTO (cont) - To work around this, we need to tack on a 255 char to the
+    % end of the blog ID. We can drop the exclude_end.
+
+    {_, _, BlogDocs} = couchdb:select({Db, "blog", "list"},
+                                      ["899"], ["899"++[255]], []),
+
+    % TODO - This is a glaring and annoying inconsistency with the Doc
+    % structure being passed into the map funs. Here we're accessing by the
+    % atom id - with the map fun, it's <<"_id">>. Granted, they are inherently
+    % different structures, but it's still annoying.
+
+    ?assertEqual([<<"899">>, <<"341">>, <<"022">>, <<"154">>],
+                 [get_value(id, R) || R <- BlogDocs]),
+
+    % Let's now access the documents associated with a post.
+    
+    % TODO - Again, same workaround for range matching described above.
+
+    {_, _, PostDocs} = couchdb:select({Db, "blog", "list"},
+                                      ["899", "341"], 
+                                      ["899", "341"++[255]], []),
+
+    ?assertEqual([<<"341">>, <<"022">>, <<"154">>],
+                 [get_value(id, R) || R <- PostDocs]),
+
+    couchdb:delete_db(DbName).
 
 map_date_title(Doc, Acc) ->
     [{get_value("date", Doc), get_value("title", Doc)}|Acc].

@@ -171,14 +171,21 @@ select(Source, Options) ->
     select(Source, undefined, undefined, Options).
 
 %% ---------------------------------------------------------------------------
-%% @doc Selects all documents or row matching a specified key of ID. See
-%% select/4 for more information.
+%% @doc Selects all documents or rows that start with a specified key of
+%% ID. See select/4 for more information.
 %%
 %% exlucde_end is ignored if specified in Options.
 %% ---------------------------------------------------------------------------
 
 select(Source, KeyOrId, Options) ->
-    select(Source, KeyOrId, KeyOrId, proplists:delete(exclude_end, Options)).
+    % Add 255 char to end of KeyOrId to extend the range to "starts with".
+    % TODO - This doesn't work with composite keys (I believe it's the same
+    % behavior using the couch HTTP interface).
+    End = case KeyOrId of
+              B when is_binary(B) -> <<B, 255>>;
+              L when is_list(L) -> L ++ [255]
+          end,
+    select(Source, KeyOrId, End, proplists:delete(exclude_end, Options)).
 
 %% ---------------------------------------------------------------------------
 %% @doc Selects a range of documents using start and end keys.
@@ -422,11 +429,18 @@ fold_view_acc_fun(Db, RowCount, Args) ->
 %% @doc Returns a list of options that can be used with couch_view:fold/4.
 %% ---------------------------------------------------------------------------
 
-fold_view_options(#view_query_args{start_key=StartKey, direction=Dir}) ->
-    %% TODO - how are doc IDs used in API? - would use here - for now, using
-    %% the unbounded val
-    Start = {StartKey, unbound_start(Dir)},
-    [{dir, Dir}, {start_key, Start}].
+fold_view_options(#view_query_args{start_key=StartKey, 
+                                   end_key=EndKey,
+                                   direction=Dir}) ->
+    lists:flatten([start_key(StartKey, Dir),
+                   end_key(EndKey, Dir),
+                   {dir, Dir}]).
+
+start_key(undefined, _) -> [];
+start_key(Key, Dir) -> {start_key, {Key, unbound_start(Dir)}}.
+
+end_key(undefined, _) -> [];
+end_key(Key, Dir) -> {end_key, {Key, unbound_end(Dir)}}.
 
 %% ---------------------------------------------------------------------------
 %% @doc Adds an _admin role user context if user_ctx isn't specified in

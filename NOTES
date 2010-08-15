@@ -48,8 +48,12 @@
   to pass in as Db -- it's always what's returned by open. It also lets us
   preserve/reuse options specified in the origial open.
 
+- How do we want to provude "docs" to Erlang functions? Name/value list is one
+  way, but we could also provide them as #doc records and let users work with
+  the couchdoc and couchterm modules.
+
 Services
---------
+========
 
 The "core" services we have are as small as possible to enable basic embedded
 functions: db ops, doc ops, view queries. Everything else is moved into
@@ -188,3 +192,10 @@ This is admitedly a perfect case for using a parameterized module:
    end
 
 (I might have to eat my words about the One True Way.)
+
+Selecting from Views
+====================
+
+Currently the API only supports *keys* and it looks like it could support doc
+IDs as well, though I'm not sure how that works. The HTTP interface accepts
+startkey_docid and endkey_docid, but I'm not sure how it works.
