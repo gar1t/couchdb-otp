@@ -9,12 +9,13 @@
 -import(proplists, [get_value/2]).
 
 test() ->
-    Tests = [fun basic_db_test/0,
-             fun basic_doc_test/0,
-             fun batch_insert_test/0,
-             fun select_docs_test/0,
-             fun basic_view_test/0,
-             fun view_support_test/0],
+    Tests = [%fun basic_db_test/0,
+             %fun basic_doc_test/0,
+             %fun batch_insert_test/0,
+             %fun select_docs_test/0,
+             %fun basic_view_test/0,
+             %fun view_support_test/0,
+             fun term_store_test/0],
     eunit:test({setup, fun setup/0, Tests}).
 
 setup() ->
@@ -259,6 +260,9 @@ basic_view_test() ->
     % In addition to the views, the design document must specify a language. In
     % this case, we use "otp", which must be registered to use couchdb_nqs
     % (native query server).
+    %
+    % To be used as views, the binary strings below are required (as opposed to
+    % lists).
 
     DDoc1 = couchdoc:new("_design/otp_str",
                         [{<<"language">>, <<"otp">>},
@@ -346,10 +350,111 @@ basic_view_test() ->
 
     couchdb:delete_db(DbName).
 
-
 view_support_test() ->
-    % TODO - work on simplifying the use of views
-    ok.
+
+    couchdb_optional:start(view_support),    
+    DbName = random_dbname(),
+    {ok, Db} = couchdb:open(DbName),
+
+    % While you can create views as fields in design documents, it is easier to
+    % use couchdb's view support.
+    %
+    % E.g. you can define the Map function from basic_view_test/0 (see above)
+    % this way.
+    Map = fun(Doc, Acc) ->
+                  [{get_value("date", Doc), get_value("title", Doc)}|Acc]
+          end,
+    DDoc1 = couchdesign:new("otp_fun", [{view, {"by_date", Map}}]),
+    couchdb:put(Db, DDoc1),
+
+    % This is syntactic sugar for the manual process of creatign a design
+    % document.
+    %
+    % Let's add a couple documents to map.
+
+    couchdb:put(Db, couchdoc:new("biking", [{"title", "Biking"},
+                                            {"date", "2009/01/30"}])),
+    couchdb:put(Db, couchdoc:new("hello", [{"title", "Hello World"},
+                                           {"date", "2009/01/15"}])),
+
+    % These are simplified versions of the docs used in basic_view_test. We
+    % should get this for our view results.
+
+    Expected = {2, 0, [[{id, <<"hello">>},
+                        {key, "2009/01/15"},
+                        {value, "Hello World"}],
+                       [{id, <<"biking">>},
+                        {key, "2009/01/30"},
+                        {value, "Biking"}]]},
+
+    R1 = couchdb:select({Db, "otp_fun", "by_date"}, []),
+    ?assertEqual(Expected, R1),
+
+    % Using functions directly in a view works well for embedded use (in
+    % particular, it provides a persisted closure), but it has a major
+    % drawback: it's not previewable in Futon.
+    %
+    % We can alternatively specify a {M, F} tuple.
+
+    DDoc2 = couchdesign:new("otp_mf", [{view, {"by_date", {couchdb_tests, 
+                                                           map_date_title}}}]),
+    couchdb:put(Db, DDoc2),
+    R2 = couchdb:select({Db, "otp_mf", "by_date"}, []),
+    ?assertEqual(Expected, R2),
+
+    % TODO - multiple views, API for adding, removing, and replacing views
+
+    couchdb:delete_db(DbName).
+
+term_store_test() ->
+
+    couchdb_optional:start(view_support),    
+    DbName = random_dbname(),
+    {ok, Db} = couchdb:open(DbName),
+
+    % One of the advantages of using CouchDB as an emebedded Erlang database is
+    % that we can store Erlang terms directly without converting back and forth
+    % from JavaScript.
+    %
+    % In this test, we'll illustrate storing terms and using them in views.
+    %
+    % Let's create a couple documents that have non-standard document bodies
+    % (i.e. are not strictly name/value fields).
+
+    couchdb:put(Db, couchterm:new("jane", {user, "jane", admin})),
+    couchdb:put(Db, couchterm:new("joe", {user, "joe", user})),
+
+    % While these documents can't be viewed in Futon, we can read them.
+
+    {ok, Jane} = couchdb:get(Db, "jane"),
+    ?assertEqual({user, "jane", admin}, couchterm:term(Jane)),
+
+    {ok, Joe} = couchdb:get(Db, "joe"),
+    ?assertEqual({user, "joe", user}, couchterm:term(Joe)),
+
+    % Let's create a couple views for these documents: one that indexes by name
+    % and another by role.
+    
+    ByName = fun([_, _, {user, Name, _}], Acc) -> [Name|Acc] end,
+    ByRole = fun([_, _, {user, _, Role}], Acc) -> [atom_to_list(Role)|Acc] end,
+
+    DDoc = couchdesign:new("funs", [{view, {"by_name", ByName}},
+                                    {view, {"by_role", ByRole}}]),
+    couchdb:put(Db, DDoc),
+
+    % We can use these to lookup a sorted list of users by either name or role.
+
+    ByNameR = couchdb:select({Db, "funs", "by_name"}, []),
+    ?assertEqual({2, 0, [[{id, <<"jane">>}, {key, "jane"}, {value, null}],
+                         [{id, <<"joe">>}, {key, "joe"}, {value, null}]]},
+                 ByNameR),
+    
+    ByRoleR = couchdb:select({Db, "funs", "by_role"}, []),
+    ?assertEqual({2, 0, [[{id, <<"jane">>}, {key, "admin"}, {value, null}],
+                         [{id, <<"joe">>}, {key, "user"}, {value, null}]]},
+                 ByRoleR),
+
+    ok. %couchdb:delete_db(DbName).    
 
 map_date_title(Doc, Acc) ->
     [{get_value("date", Doc), get_value("title", Doc)}|Acc].

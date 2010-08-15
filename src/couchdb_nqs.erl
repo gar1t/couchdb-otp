@@ -35,7 +35,7 @@ handle_call({prompt, [?ADD_FUN, Bin]}, _From, #state{funs=Funs}=State) ->
     {reply, true, State#state{funs=[to_fun(Bin)|Funs]}};
 
 handle_call({prompt, [?MAP_DOC, {Doc}]}, _From, #state{funs=Funs}=State) ->
-    {reply, [apply_map(F, Doc) || F <- Funs], State};
+    {reply, apply_maps(Funs, Doc, []), State};
 
 handle_call({prompt, Data}, _From, State) ->
     error_logger:error_report({unhandled_prompt, Data}),
@@ -95,6 +95,16 @@ term_to_fun({M, F, A}=T) when is_atom(M) andalso
                               is_atom(F) andalso 
                               is_list(A) -> T;
 term_to_fun(Term) -> throw({invalid_fun_spec, Term}). 
+
+%% ---------------------------------------------------------------------------
+%% @doc Applies a list of maps to a doc. This reverses the list of mapped
+%% results by design.
+%% ---------------------------------------------------------------------------
+
+apply_maps([], _, Acc) -> Acc;
+apply_maps([F|T], Doc, Acc) ->
+    apply_maps(T, Doc, [apply_map(F, Doc)|Acc]).
+
 
 %% ---------------------------------------------------------------------------
 %% @doc Applies a fun to a document map operation.
