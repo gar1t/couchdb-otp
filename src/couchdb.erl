@@ -7,7 +7,7 @@
 -export([open/1, open/2,
          close/1,
          delete_db/1, delete_db/2,
-         info/1,
+         info/1, info/2,
          all_dbs/0,
          put/2, put/3,
          put_many/2,
@@ -74,9 +74,30 @@ delete_db(Name, Options) ->
 %% Error if Db is invalid.
 %% ---------------------------------------------------------------------------
 
-info(Db) ->
+info(#db{}=Db) ->
     {ok, Info} = couch_db:get_db_info(Db),
-    [info_item(I) || I <- Info].
+    [info_item(I) || I <- Info];
+info(Name) when is_list(Name) ->
+    case couch_db:open(to_bin(Name), []) of
+        {not_found, no_db_file} -> undefined;
+        {ok, Db} -> 
+            try 
+                info(Db) 
+            after 
+                couch_db:close(Db) 
+            end
+    end.
+
+info(Db, InfoName) ->
+    case info(Db) of
+        undefined -> undefined;
+        Info ->
+            case proplists:get_value(InfoName, Info) of
+                undefined ->
+                    erlang:error(badarg);
+                Val -> {InfoName, Val}
+            end
+    end.
 
 info_item({db_name, B}) ->
     {db_name, binary_to_list(B)};
